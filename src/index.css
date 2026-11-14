@@ -1,0 +1,67 @@
+@import "tailwindcss";
+@import "katex/dist/katex.min.css";
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+
+  body {
+    font-family: var(--font-body);
+    color: #0f172a;
+    background-color: #f8fafc;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rich math content formatting */
+.math-rich-content sup {
+  font-size: 0.72em;
+  vertical-align: super;
+  line-height: 0;
+}
+
+.math-rich-content sub {
+  font-size: 0.72em;
+  vertical-align: sub;
+  line-height: 0;
+}
+
+.math-rich-content ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0.35rem 0;
+}
+
+.math-rich-content ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 0.35rem 0;
+}
+
+.math-rich-content p {
+  margin-bottom: 0.35rem;
+}
+
+.math-rich-content p:last-child {
+  margin-bottom: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

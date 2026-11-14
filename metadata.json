@@ -1,0 +1,6 @@
+{
+  "name": "ExamNova — Examination Development & Question Bank Platform",
+  "description": "Enterprise university and national examination development, blueprint specification, question authoring, peer review, and exam bank management platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
