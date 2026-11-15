@@ -12,14 +12,20 @@ import {
 import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
 import { MathRenderer } from '../components/MathRenderer';
+import {
+  WorkflowTimeline,
+  PACKAGE_WORKFLOW_STAGES,
+  getPackageNextAction,
+} from '../components/WorkflowTimeline';
 
 export const SubmittedPackagesView: React.FC = () => {
-  const { packages, users, subjects, assignPackageGovernance } = useExamNova();
+  const { packages, questions, users, subjects, assignPackageGovernance } = useExamNova();
   const reviewers = users.filter((u) => u.role === 'reviewer' && u.status === 'Active');
   const approvers = users.filter((u) => u.role === 'approver' && u.status === 'Active');
 
   const [revByPkg, setRevByPkg] = useState<Record<string, string>>({});
   const [appByPkg, setAppByPkg] = useState<Record<string, string>>({});
+  const [expandedPkgId, setExpandedPkgId] = useState<string | null>(packages[0]?.id ?? null);
 
   return (
     <div className="space-y-6">
@@ -37,60 +43,89 @@ export const SubmittedPackagesView: React.FC = () => {
           const isSubmitted = pkg.status === 'Submitted';
           const selectedRev = revByPkg[pkg.id] ?? pkg.reviewerId ?? reviewers[0]?.id ?? '';
           const selectedApp = appByPkg[pkg.id] ?? pkg.approverId ?? approvers[0]?.id ?? '';
+          const pkgQs = questions.filter((q) => q.packageId === pkg.id);
+          const readyQ = pkgQs.filter((q) => q.authoringStatus === 'Ready').length;
+          const returnedQ = pkgQs.filter((q) => q.reviewStatus === 'Returned').length;
+          const isExpanded = expandedPkgId === pkg.id;
 
           return (
-            <div key={pkg.id} className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="text-sm font-semibold text-slate-900">{pkg.title}</span>
-                  <StatusText status={pkg.status} />
-                </div>
-                <div className="text-xs text-slate-500 tabular-nums">
-                  {subj} · Author: {author} · {pkg.totalAssigned} Questions · Submitted {pkg.submittedAt || 'Pending'}
-                </div>
-                {pkg.reviewerId && (
-                  <div className="text-xs text-slate-600">
-                    Reviewer: <strong>{users.find((u) => u.id === pkg.reviewerId)?.name}</strong> · Approver:{' '}
-                    <strong>{users.find((u) => u.id === pkg.approverId)?.name}</strong>
+            <div key={pkg.id} className="p-5 space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-900">{pkg.title}</span>
+                    <StatusText status={pkg.status} />
                   </div>
-                )}
-              </div>
+                  <div className="text-xs text-slate-500 tabular-nums">
+                    {subj} · Author: {author} · {pkg.totalAssigned} Questions · Submitted {pkg.submittedAt || 'Pending'}
+                  </div>
+                  {pkg.reviewerId && (
+                    <div className="text-xs text-slate-600">
+                      Reviewer: <strong>{users.find((u) => u.id === pkg.reviewerId)?.name}</strong> · Approver:{' '}
+                      <strong>{users.find((u) => u.id === pkg.approverId)?.name}</strong>
+                    </div>
+                  )}
+                </div>
 
-              {isSubmitted ? (
                 <div className="flex flex-wrap items-center gap-2 shrink-0 text-xs">
-                  <select
-                    value={selectedRev}
-                    onChange={(e) => setRevByPkg({ ...revByPkg, [pkg.id]: e.target.value })}
-                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white"
-                  >
-                    {reviewers.map((r) => (
-                      <option key={r.id} value={r.id}>Rev: {r.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedApp}
-                    onChange={(e) => setAppByPkg({ ...appByPkg, [pkg.id]: e.target.value })}
-                    className="px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white"
-                  >
-                    {approvers.map((a) => (
-                      <option key={a.id} value={a.id}>App: {a.name}</option>
-                    ))}
-                  </select>
+                  {isSubmitted ? (
+                    <>
+                      <select
+                        value={selectedRev}
+                        onChange={(e) => setRevByPkg({ ...revByPkg, [pkg.id]: e.target.value })}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white"
+                      >
+                        {reviewers.map((r) => (
+                          <option key={r.id} value={r.id}>Rev: {r.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={selectedApp}
+                        onChange={(e) => setAppByPkg({ ...appByPkg, [pkg.id]: e.target.value })}
+                        className="px-2.5 py-1.5 border border-slate-200 rounded-lg bg-white"
+                      >
+                        {approvers.map((a) => (
+                          <option key={a.id} value={a.id}>App: {a.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => assignPackageGovernance(pkg.id, selectedRev, selectedApp)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Assign & Route</span>
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-500 whitespace-nowrap mr-1">
+                      {pkg.status === 'In Progress' || pkg.status === 'Assigned'
+                        ? 'Awaiting Author Submission'
+                        : 'Governance Assigned'}
+                    </span>
+                  )}
                   <button
                     type="button"
-                    onClick={() => assignPackageGovernance(pkg.id, selectedRev, selectedApp)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap"
+                    onClick={() => setExpandedPkgId(isExpanded ? null : pkg.id)}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
                   >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Assign & Route</span>
+                    {isExpanded ? 'Hide Timeline' : 'View Timeline'}
                   </button>
                 </div>
-              ) : (
-                <div className="text-xs text-slate-500 whitespace-nowrap">
-                  {pkg.status === 'In Progress' || pkg.status === 'Assigned'
-                    ? 'Awaiting Author Submission'
-                    : 'Governance Assigned'}
-                </div>
+              </div>
+
+              {isExpanded && (
+                <WorkflowTimeline
+                  currentStatus={pkg.status}
+                  stages={PACKAGE_WORKFLOW_STAGES}
+                  compact
+                  nextAction={getPackageNextAction(pkg.status, {
+                    readyQuestions: readyQ,
+                    totalQuestions: pkgQs.length,
+                    returnedQuestions: returnedQ,
+                  })}
+                  feedbackComment={pkgQs.find((q) => q.reviewStatus === 'Returned')?.reviewerComment}
+                />
               )}
             </div>
           );
@@ -108,6 +143,7 @@ export const QuestionReviewView: React.FC = () => {
     topics,
     cognitiveLevels,
     difficultyLevels,
+    questionTypes,
     users,
     selectedPackageId,
     setSelectedPackageId,
@@ -218,6 +254,16 @@ export const QuestionReviewView: React.FC = () => {
             </button>
           </div>
 
+          <WorkflowTimeline
+            currentStatus={activePkg.status}
+            stages={PACKAGE_WORKFLOW_STAGES}
+            compact
+            nextAction={getPackageNextAction(activePkg.status, {
+              totalQuestions: pkgQuestions.length,
+              returnedQuestions: returnedCount,
+            })}
+          />
+
           {/* Slot Navigation Strip */}
           <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap gap-1.5">
             {pkgQuestions.map((q, idx) => {
@@ -250,6 +296,7 @@ export const QuestionReviewView: React.FC = () => {
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
                   <div className="text-xs text-slate-600 tabular-nums">
                     <strong className="text-slate-900 font-mono">Q{currentQ.slotNumber}</strong> ·{' '}
+                    {questionTypes.find((qt) => qt.id === currentQ.questionTypeId)?.name ?? 'MCQ'} ·{' '}
                     {topics.find((t) => t.id === currentQ.topicId)?.name} ·{' '}
                     {cognitiveLevels.find((c) => c.id === currentQ.cognitiveLevelId)?.name} ·{' '}
                     {difficultyLevels.find((d) => d.id === currentQ.difficultyLevelId)?.name} · {currentQ.marks} Marks
@@ -265,25 +312,37 @@ export const QuestionReviewView: React.FC = () => {
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg" dangerouslySetInnerHTML={{ __html: currentQ.diagramSvg }} />
                 )}
 
-                <div className="space-y-2">
-                  {currentQ.options.map((opt) => {
-                    const isKey = opt.id === currentQ.correctOptionId;
-                    return (
-                      <div
-                        key={opt.id}
-                        className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${
-                          isKey ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200'
-                        }`}
-                      >
-                        <span className="font-mono font-bold text-slate-700">{opt.label}.</span>
-                        <div className="flex-1">
-                          <MathRenderer content={opt.content} />
+                {currentQ.questionTypeId === 'qt-short' || currentQ.options.length === 0 ? (
+                  <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50/40 space-y-1">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+                      Expected Sample Answer / Marking Rubric
+                    </div>
+                    <MathRenderer
+                      content={currentQ.sampleAnswer || 'No sample answer provided.'}
+                      className="text-sm text-slate-900"
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(currentQ.questionTypeId === 'qt-tf' ? currentQ.options.slice(0, 2) : currentQ.options).map((opt) => {
+                      const isKey = opt.id === currentQ.correctOptionId;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${
+                            isKey ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200'
+                          }`}
+                        >
+                          <span className="font-mono font-bold text-slate-700">{opt.label}.</span>
+                          <div className="flex-1">
+                            <MathRenderer content={opt.content} />
+                          </div>
+                          {isKey && <span className="text-xs font-semibold text-emerald-700 shrink-0">Key</span>}
                         </div>
-                        {isKey && <span className="text-xs font-semibold text-emerald-700 shrink-0">Key</span>}
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="pt-3 border-t border-slate-200">
                   <div className="text-xs font-semibold text-slate-700 mb-1">Author Rationale</div>
@@ -383,6 +442,7 @@ export const QuestionApprovalView: React.FC = () => {
     questions,
     subjects,
     topics,
+    questionTypes,
     users,
     approverPackageDecision,
   } = useExamNova();
@@ -472,31 +532,47 @@ export const QuestionApprovalView: React.FC = () => {
                 </div>
               </div>
 
+              <WorkflowTimeline
+                currentStatus={activePkg.status}
+                stages={PACKAGE_WORKFLOW_STAGES}
+                compact
+                nextAction={getPackageNextAction(activePkg.status, {
+                  totalQuestions: pkgQuestions.length,
+                })}
+              />
+
               <div className="bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
                 {pkgQuestions.map((q) => (
                   <div key={q.id} className="p-5 space-y-2.5">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-mono font-bold text-slate-800">
-                        Q{q.slotNumber} · {topics.find((t) => t.id === q.topicId)?.name} · {q.marks} Marks
+                        Q{q.slotNumber} · {questionTypes.find((qt) => qt.id === q.questionTypeId)?.code ?? 'MCQ'} · {topics.find((t) => t.id === q.topicId)?.name} · {q.marks} Marks
                       </span>
                       <StatusText status={q.reviewStatus} />
                     </div>
                     <MathRenderer content={q.stem} className="text-sm font-medium text-slate-900" />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                      {q.options.map((o) => (
-                        <div
-                          key={o.id}
-                          className={`px-3 py-1.5 rounded border text-xs flex items-center gap-2 ${
-                            o.id === q.correctOptionId
-                              ? 'border-emerald-300 bg-emerald-50/50 font-semibold'
-                              : 'border-slate-200'
-                          }`}
-                        >
-                          <span className="font-mono">{o.label}.</span>
-                          <MathRenderer content={o.content} />
-                        </div>
-                      ))}
-                    </div>
+                    {q.questionTypeId === 'qt-short' || q.options.length === 0 ? (
+                      <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/40 text-xs">
+                        <span className="font-semibold text-emerald-800 mr-2">Expected Sample Answer:</span>
+                        <MathRenderer content={q.sampleAnswer || 'No sample answer provided.'} className="inline text-slate-900" />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        {(q.questionTypeId === 'qt-tf' ? q.options.slice(0, 2) : q.options).map((o) => (
+                          <div
+                            key={o.id}
+                            className={`px-3 py-1.5 rounded border text-xs flex items-center gap-2 ${
+                              o.id === q.correctOptionId
+                                ? 'border-emerald-300 bg-emerald-50/50 font-semibold'
+                                : 'border-slate-200'
+                            }`}
+                          >
+                            <span className="font-mono">{o.label}.</span>
+                            <MathRenderer content={o.content} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

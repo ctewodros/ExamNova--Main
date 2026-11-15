@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Pencil, X } from 'lucide-react';
 import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
 
@@ -23,15 +23,23 @@ export const CurriculumModule: React.FC = () => {
     questionTypes,
     users,
     addExamType,
+    updateExamType,
     addSubject,
+    updateSubject,
     addTopic,
+    updateTopic,
     addLearningOutcome,
+    updateLearningOutcome,
     addCognitiveLevel,
+    updateCognitiveLevel,
     addDifficultyLevel,
+    updateDifficultyLevel,
     addQuestionType,
+    updateQuestionType,
   } = useExamNova();
 
   const [tab, setTab] = useState<CurriculumTab>('exam_types');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Form states
   const [etName, setEtName] = useState('');
@@ -93,7 +101,10 @@ export const CurriculumModule: React.FC = () => {
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => {
+              setTab(t.id);
+              setEditingId(null);
+            }}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
               tab === t.id
                 ? 'bg-white text-slate-900 shadow-sm'
@@ -116,6 +127,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Exam Type</th>
                   <th className="py-3 px-4">Level</th>
                   <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -130,6 +142,29 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4">
                       <StatusText status={et.active ? 'Active' : 'Archived'} />
                     </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(et.id);
+                          setEtName(et.name);
+                          setEtCode(et.code);
+                          setEtLevel(et.level);
+                          setEtDesc(et.description);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateExamType({ ...et, active: !et.active })}
+                        className="text-slate-600 hover:text-slate-900 font-medium"
+                      >
+                        {et.active ? 'Archive' : 'Activate'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -140,20 +175,52 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!etName.trim() || !etCode.trim()) return;
-              addExamType({
-                name: etName.trim(),
-                code: etCode.trim().toUpperCase(),
-                level: etLevel,
-                description: etDesc.trim() || 'Standardized institutional assessment.',
-                active: true,
-              });
+              if (editingId) {
+                const existing = examTypes.find((x) => x.id === editingId);
+                updateExamType({
+                  id: editingId,
+                  name: etName.trim(),
+                  code: etCode.trim().toUpperCase(),
+                  level: etLevel,
+                  description: etDesc.trim() || 'Standardized institutional assessment.',
+                  active: existing?.active ?? true,
+                });
+                setEditingId(null);
+              } else {
+                addExamType({
+                  name: etName.trim(),
+                  code: etCode.trim().toUpperCase(),
+                  level: etLevel,
+                  description: etDesc.trim() || 'Standardized institutional assessment.',
+                  active: true,
+                });
+              }
               setEtName('');
               setEtCode('');
               setEtDesc('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Exam Type</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Exam Type' : 'Add Exam Type'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setEtName('');
+                    setEtCode('');
+                    setEtDesc('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div>
               <label className="block font-medium text-slate-700 mb-1">Exam Type Name</label>
               <input
@@ -198,7 +265,7 @@ export const CurriculumModule: React.FC = () => {
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Exam Type</span>
+              <span>{editingId ? 'Save Changes' : 'Add Exam Type'}</span>
             </button>
           </form>
         </div>
@@ -214,6 +281,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Subject</th>
                   <th className="py-3 px-4">Coordinator</th>
                   <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -227,6 +295,28 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4">
                       <StatusText status={s.active ? 'Active' : 'Archived'} />
                     </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(s.id);
+                          setSubjName(s.name);
+                          setSubjCode(s.code);
+                          setSubjCoord(s.coordinatorId);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateSubject({ ...s, active: !s.active })}
+                        className="text-slate-600 hover:text-slate-900 font-medium"
+                      >
+                        {s.active ? 'Archive' : 'Activate'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -237,19 +327,50 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!subjName.trim() || !subjCode.trim()) return;
-              addSubject({
-                name: subjName.trim(),
-                code: subjCode.trim().toUpperCase(),
-                examTypeIds: examTypes.map((e) => e.id),
-                coordinatorId: subjCoord,
-                active: true,
-              });
+              if (editingId) {
+                const existing = subjects.find((x) => x.id === editingId);
+                updateSubject({
+                  id: editingId,
+                  name: subjName.trim(),
+                  code: subjCode.trim().toUpperCase(),
+                  examTypeIds: existing?.examTypeIds ?? examTypes.map((ex) => ex.id),
+                  coordinatorId: subjCoord,
+                  active: existing?.active ?? true,
+                });
+                setEditingId(null);
+              } else {
+                addSubject({
+                  name: subjName.trim(),
+                  code: subjCode.trim().toUpperCase(),
+                  examTypeIds: examTypes.map((e) => e.id),
+                  coordinatorId: subjCoord,
+                  active: true,
+                });
+              }
               setSubjName('');
               setSubjCode('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Subject</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Subject' : 'Add Subject'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setSubjName('');
+                    setSubjCode('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div>
               <label className="block font-medium text-slate-700 mb-1">Subject Name</label>
               <input
@@ -291,7 +412,7 @@ export const CurriculumModule: React.FC = () => {
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Subject</span>
+              <span>{editingId ? 'Save Changes' : 'Add Subject'}</span>
             </button>
           </form>
         </div>
@@ -314,9 +435,25 @@ export const CurriculumModule: React.FC = () => {
                       Subtopics: {t.subtopics.map((st) => st.name).join(' · ') || 'None'}
                     </div>
                   </div>
-                  <span className="text-xs font-mono tabular-nums text-slate-500 shrink-0">
-                    {t.subtopics.length} subtopics
-                  </span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs font-mono tabular-nums text-slate-500">
+                      {t.subtopics.length} subtopics
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(t.id);
+                        setTopSubj(t.subjectId);
+                        setTopName(t.name);
+                        setTopCode(t.code);
+                        setTopSubs(t.subtopics.map((st) => st.name).join(', '));
+                      }}
+                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -326,19 +463,49 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!topName.trim() || !topCode.trim()) return;
-              addTopic(
-                topSubj,
-                topName.trim(),
-                topCode.trim().toUpperCase(),
-                topSubs.split(',')
-              );
+              if (editingId) {
+                updateTopic(
+                  editingId,
+                  topSubj,
+                  topName.trim(),
+                  topCode.trim().toUpperCase(),
+                  topSubs.split(',')
+                );
+                setEditingId(null);
+              } else {
+                addTopic(
+                  topSubj,
+                  topName.trim(),
+                  topCode.trim().toUpperCase(),
+                  topSubs.split(',')
+                );
+              }
               setTopName('');
               setTopCode('');
               setTopSubs('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Topic & Subtopics</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Topic & Subtopics' : 'Add Topic & Subtopics'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setTopName('');
+                    setTopCode('');
+                    setTopSubs('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div>
               <label className="block font-medium text-slate-700 mb-1">Subject</label>
               <select
@@ -390,7 +557,7 @@ export const CurriculumModule: React.FC = () => {
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Topic</span>
+              <span>{editingId ? 'Save Changes' : 'Add Topic'}</span>
             </button>
           </form>
         </div>
@@ -406,6 +573,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Topic</th>
                   <th className="py-3 px-4">Learning Outcome Statement</th>
                   <th className="py-3 px-4">Target Cognitive</th>
+                  <th className="py-3 px-4 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -419,6 +587,23 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
                       {cognitiveLevels.find((c) => c.id === lo.cognitiveLevelId)?.name}
                     </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(lo.id);
+                          setLoSubj(lo.subjectId);
+                          setLoTopic(lo.topicId);
+                          setLoCode(lo.code);
+                          setLoStmt(lo.statement);
+                          setLoCog(lo.cognitiveLevelId);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -429,25 +614,60 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!loCode.trim() || !loStmt.trim()) return;
-              addLearningOutcome({
-                subjectId: loSubj,
-                topicId: loTopic,
-                code: loCode.trim().toUpperCase(),
-                statement: loStmt.trim(),
-                cognitiveLevelId: loCog,
-              });
+              if (editingId) {
+                updateLearningOutcome({
+                  id: editingId,
+                  subjectId: loSubj,
+                  topicId: loTopic,
+                  code: loCode.trim().toUpperCase(),
+                  statement: loStmt.trim(),
+                  cognitiveLevelId: loCog,
+                });
+                setEditingId(null);
+              } else {
+                addLearningOutcome({
+                  subjectId: loSubj,
+                  topicId: loTopic,
+                  code: loCode.trim().toUpperCase(),
+                  statement: loStmt.trim(),
+                  cognitiveLevelId: loCog,
+                });
+              }
               setLoCode('');
               setLoStmt('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Learning Outcome</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Learning Outcome' : 'Add Learning Outcome'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setLoCode('');
+                    setLoStmt('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Subject</label>
                 <select
                   value={loSubj}
-                  onChange={(e) => setLoSubj(e.target.value)}
+                  onChange={(e) => {
+                    const nextSubj = e.target.value;
+                    setLoSubj(nextSubj);
+                    const firstT = topics.find((t) => t.subjectId === nextSubj);
+                    if (firstT) setLoTopic(firstT.id);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white"
                 >
                   {subjects.map((s) => (
@@ -508,7 +728,7 @@ export const CurriculumModule: React.FC = () => {
               className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Learning Outcome</span>
+              <span>{editingId ? 'Save Changes' : 'Add Learning Outcome'}</span>
             </button>
           </form>
         </div>
@@ -523,6 +743,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Code</th>
                   <th className="py-3 px-4">Cognitive Level</th>
                   <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -531,6 +752,21 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4 font-mono text-slate-600">{c.code}</td>
                     <td className="py-3 px-4 font-semibold text-slate-900">{c.name}</td>
                     <td className="py-3 px-4 text-slate-600">{c.description}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(c.id);
+                          setCogName(c.name);
+                          setCogCode(c.code);
+                          setCogDesc(c.description);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -540,19 +776,50 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!cogName.trim() || !cogCode.trim()) return;
-              addCognitiveLevel({
-                name: cogName.trim(),
-                code: cogCode.trim().toUpperCase(),
-                order: cognitiveLevels.length + 1,
-                description: cogDesc.trim() || 'Cognitive taxonomy tier.',
-              });
+              if (editingId) {
+                const existing = cognitiveLevels.find((x) => x.id === editingId);
+                updateCognitiveLevel({
+                  id: editingId,
+                  name: cogName.trim(),
+                  code: cogCode.trim().toUpperCase(),
+                  order: existing?.order ?? cognitiveLevels.length,
+                  description: cogDesc.trim() || 'Cognitive taxonomy tier.',
+                });
+                setEditingId(null);
+              } else {
+                addCognitiveLevel({
+                  name: cogName.trim(),
+                  code: cogCode.trim().toUpperCase(),
+                  order: cognitiveLevels.length + 1,
+                  description: cogDesc.trim() || 'Cognitive taxonomy tier.',
+                });
+              }
               setCogName('');
               setCogCode('');
               setCogDesc('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Cognitive Level</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Cognitive Level' : 'Add Cognitive Level'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setCogName('');
+                    setCogCode('');
+                    setCogDesc('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Level Name</label>
@@ -569,7 +836,7 @@ export const CurriculumModule: React.FC = () => {
             </div>
             <button type="submit" className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Cognitive Level</span>
+              <span>{editingId ? 'Save Changes' : 'Add Cognitive Level'}</span>
             </button>
           </form>
         </div>
@@ -585,6 +852,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Difficulty</th>
                   <th className="py-3 px-4">Weight</th>
                   <th className="py-3 px-4">Criteria</th>
+                  <th className="py-3 px-4 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -594,6 +862,22 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4 font-semibold text-slate-900">{d.name}</td>
                     <td className="py-3 px-4 font-mono tabular-nums text-slate-700">{d.weight}</td>
                     <td className="py-3 px-4 text-slate-600">{d.description}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(d.id);
+                          setDifName(d.name);
+                          setDifCode(d.code);
+                          setDifWeight(d.weight);
+                          setDifDesc(d.description);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -603,19 +887,49 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!difName.trim() || !difCode.trim()) return;
-              addDifficultyLevel({
-                name: difName.trim(),
-                code: difCode.trim().toUpperCase(),
-                weight: difWeight,
-                description: difDesc.trim() || 'Difficulty calibration tier.',
-              });
+              if (editingId) {
+                updateDifficultyLevel({
+                  id: editingId,
+                  name: difName.trim(),
+                  code: difCode.trim().toUpperCase(),
+                  weight: difWeight,
+                  description: difDesc.trim() || 'Difficulty calibration tier.',
+                });
+                setEditingId(null);
+              } else {
+                addDifficultyLevel({
+                  name: difName.trim(),
+                  code: difCode.trim().toUpperCase(),
+                  weight: difWeight,
+                  description: difDesc.trim() || 'Difficulty calibration tier.',
+                });
+              }
               setDifName('');
               setDifCode('');
               setDifDesc('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Difficulty Level</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Difficulty Level' : 'Add Difficulty Level'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setDifName('');
+                    setDifCode('');
+                    setDifDesc('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="block font-medium text-slate-700 mb-1">Name</label>
@@ -636,7 +950,7 @@ export const CurriculumModule: React.FC = () => {
             </div>
             <button type="submit" className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Difficulty Level</span>
+              <span>{editingId ? 'Save Changes' : 'Add Difficulty Level'}</span>
             </button>
           </form>
         </div>
@@ -652,6 +966,7 @@ export const CurriculumModule: React.FC = () => {
                   <th className="py-3 px-4">Format Name</th>
                   <th className="py-3 px-4">Response Structure</th>
                   <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4 text-right">Edit</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
@@ -661,6 +976,22 @@ export const CurriculumModule: React.FC = () => {
                     <td className="py-3 px-4 font-semibold text-slate-900">{qt.name}</td>
                     <td className="py-3 px-4 text-slate-700">{qt.hasOptions ? 'Fixed Choice Options' : 'Constructed Response'}</td>
                     <td className="py-3 px-4 text-slate-600">{qt.description}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(qt.id);
+                          setQtName(qt.name);
+                          setQtCode(qt.code);
+                          setQtHasOpts(qt.hasOptions);
+                          setQtDesc(qt.description);
+                        }}
+                        className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -670,19 +1001,49 @@ export const CurriculumModule: React.FC = () => {
             onSubmit={(e) => {
               e.preventDefault();
               if (!qtName.trim() || !qtCode.trim()) return;
-              addQuestionType({
-                name: qtName.trim(),
-                code: qtCode.trim().toUpperCase(),
-                hasOptions: qtHasOpts,
-                description: qtDesc.trim() || 'Assessment item format.',
-              });
+              if (editingId) {
+                updateQuestionType({
+                  id: editingId,
+                  name: qtName.trim(),
+                  code: qtCode.trim().toUpperCase(),
+                  hasOptions: qtHasOpts,
+                  description: qtDesc.trim() || 'Assessment item format.',
+                });
+                setEditingId(null);
+              } else {
+                addQuestionType({
+                  name: qtName.trim(),
+                  code: qtCode.trim().toUpperCase(),
+                  hasOptions: qtHasOpts,
+                  description: qtDesc.trim() || 'Assessment item format.',
+                });
+              }
               setQtName('');
               setQtCode('');
               setQtDesc('');
             }}
             className="bg-white border border-slate-200 rounded-xl p-5 space-y-3.5 text-xs"
           >
-            <h2 className="text-sm font-semibold text-slate-900">Add Question Type</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
+                {editingId ? 'Edit Question Type' : 'Add Question Type'}
+              </h2>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(null);
+                    setQtName('');
+                    setQtCode('');
+                    setQtDesc('');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block font-medium text-slate-700 mb-1">Type Name</label>
@@ -703,7 +1064,7 @@ export const CurriculumModule: React.FC = () => {
             </div>
             <button type="submit" className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">
               <Plus className="w-3.5 h-3.5" />
-              <span>Add Question Type</span>
+              <span>{editingId ? 'Save Changes' : 'Add Question Type'}</span>
             </button>
           </form>
         </div>

@@ -16,6 +16,11 @@ import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
 import { RichMathEditor } from '../components/RichMathEditor';
 import { MathRenderer } from '../components/MathRenderer';
+import {
+  WorkflowTimeline,
+  PACKAGE_WORKFLOW_STAGES,
+  getPackageNextAction,
+} from '../components/WorkflowTimeline';
 
 export const QuestionRequirementsView: React.FC = () => {
   const {
@@ -399,12 +404,26 @@ export const MyWorkView: React.FC = () => {
             </div>
 
             {/* Interactive Progress Bar */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="font-medium text-slate-700">
                   Progress: <strong className="font-mono tabular-nums text-slate-900">{readyCount} / {totalCount}</strong> Questions Ready
                 </span>
-                <span className="font-mono tabular-nums font-bold text-blue-700">{pct}%</span>
+                <div className="flex flex-wrap items-center gap-3 text-[11px] tabular-nums">
+                  <span className="text-emerald-700 font-medium">
+                    Ready: {pkgQuestions.filter((q) => q.authoringStatus === 'Ready').length}
+                  </span>
+                  <span className="text-amber-700 font-medium">
+                    Incomplete: {pkgQuestions.filter((q) => q.authoringStatus === 'Incomplete').length}
+                  </span>
+                  <span className="text-slate-600 font-medium">
+                    Not Started: {pkgQuestions.filter((q) => q.authoringStatus === 'Not Started').length}
+                  </span>
+                  {returnedCount > 0 && (
+                    <span className="text-rose-700 font-semibold">Returned: {returnedCount}</span>
+                  )}
+                  <span className="font-mono font-bold text-blue-700">{pct}%</span>
+                </div>
               </div>
               <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
@@ -425,6 +444,18 @@ export const MyWorkView: React.FC = () => {
               )}
             </div>
           </div>
+
+          <WorkflowTimeline
+            currentStatus={activePkg.status}
+            stages={PACKAGE_WORKFLOW_STAGES}
+            compact
+            nextAction={getPackageNextAction(activePkg.status, {
+              readyQuestions: readyCount,
+              totalQuestions: totalCount,
+              returnedQuestions: returnedCount,
+            })}
+            feedbackComment={pkgQuestions.find((q) => q.reviewStatus === 'Returned')?.reviewerComment}
+          />
 
           {/* Assigned Question Requirement List */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -509,6 +540,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
     learningOutcomes,
     cognitiveLevels,
     difficultyLevels,
+    questionTypes,
     selectedPackageId,
     setSelectedPackageId,
     selectedQuestionId,
@@ -531,6 +563,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
   const [stem, setStem] = useState('');
   const [options, setOptions] = useState(currentQuestion?.options || []);
   const [correctOptionId, setCorrectOptionId] = useState('');
+  const [sampleAnswer, setSampleAnswer] = useState('');
   const [rationale, setRationale] = useState('');
   const [diagramSvg, setDiagramSvg] = useState<string | undefined>(undefined);
   const [showFullPreview, setShowFullPreview] = useState(false);
@@ -540,6 +573,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
       setStem(currentQuestion.stem);
       setOptions(currentQuestion.options);
       setCorrectOptionId(currentQuestion.correctOptionId);
+      setSampleAnswer(currentQuestion.sampleAnswer || '');
       setRationale(currentQuestion.rationale);
       setDiagramSvg(currentQuestion.diagramSvg);
     }
@@ -554,7 +588,6 @@ export const AuthoringWorkspaceView: React.FC = () => {
   }
 
   const isDraftStage = activePkg.status === 'Assigned' || activePkg.status === 'In Progress';
-  const returnedItems = pkgQuestions.filter((q) => q.reviewStatus === 'Returned');
   const isReturnedStage = activePkg.status === 'Returned to Author';
   const canEditThisQuestion =
     isDraftStage || (isReturnedStage && currentQuestion.reviewStatus === 'Returned');
@@ -573,6 +606,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
       stem,
       options,
       correctOptionId,
+      sampleAnswer,
       rationale,
       diagramSvg,
     });
@@ -592,6 +626,9 @@ export const AuthoringWorkspaceView: React.FC = () => {
   const loObj = learningOutcomes.find((l) => l.id === currentQuestion.learningOutcomeId);
   const cogName = cognitiveLevels.find((c) => c.id === currentQuestion.cognitiveLevelId)?.name;
   const difName = difficultyLevels.find((d) => d.id === currentQuestion.difficultyLevelId)?.name;
+  const qtObj = questionTypes.find((qt) => qt.id === currentQuestion.questionTypeId);
+  const isShortAnswer = currentQuestion.questionTypeId === 'qt-short';
+  const visibleOptions = currentQuestion.questionTypeId === 'qt-tf' ? options.slice(0, 2) : options;
 
   return (
     <div className="space-y-5">
@@ -616,7 +653,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
             )}
           </div>
           <div className="text-xs text-slate-500 mt-0.5 tabular-nums">
-            {topicName} · {loObj?.code} · {cogName} · {difName} · {currentQuestion.marks} Marks
+            {topicName} · {loObj?.code} · {cogName} · {difName} · {qtObj?.name ?? 'MCQ'} · {currentQuestion.marks} Marks
           </div>
         </div>
 
@@ -760,30 +797,37 @@ export const AuthoringWorkspaceView: React.FC = () => {
           {diagramSvg && (
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg" dangerouslySetInnerHTML={{ __html: diagramSvg }} />
           )}
-          <div className="space-y-2.5">
-            {options.map((opt) => {
-              const isCorrect = opt.id === correctOptionId;
-              return (
-                <div
-                  key={opt.id}
-                  className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${
-                    isCorrect ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
-                  }`}
-                >
-                  <span className="font-mono font-bold text-slate-700 shrink-0">{opt.label}.</span>
-                  <div className="flex-1">
-                    <MathRenderer content={opt.content} />
+          {isShortAnswer ? (
+            <div className="p-3.5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+              <div className="text-xs font-semibold text-emerald-900 mb-1">Expected Model Answer / Rubric</div>
+              <MathRenderer content={sampleAnswer || 'No model answer entered yet.'} className="text-sm text-slate-900" />
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {visibleOptions.map((opt) => {
+                const isCorrect = opt.id === correctOptionId;
+                return (
+                  <div
+                    key={opt.id}
+                    className={`flex items-start gap-3 p-3 rounded-lg border text-sm ${
+                      isCorrect ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-200'
+                    }`}
+                  >
+                    <span className="font-mono font-bold text-slate-700 shrink-0">{opt.label}.</span>
+                    <div className="flex-1">
+                      <MathRenderer content={opt.content} />
+                    </div>
+                    {isCorrect && (
+                      <span className="text-xs font-semibold text-emerald-700 inline-flex items-center gap-1 shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Correct Key
+                      </span>
+                    )}
                   </div>
-                  {isCorrect && (
-                    <span className="text-xs font-semibold text-emerald-700 inline-flex items-center gap-1 shrink-0">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Correct Key
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
           <div className="pt-3 border-t border-slate-200">
             <div className="text-xs font-semibold text-slate-700 mb-1">Explanation / Rationale</div>
             <MathRenderer content={rationale} className="text-xs text-slate-700" />
@@ -804,53 +848,64 @@ export const AuthoringWorkspaceView: React.FC = () => {
               onDiagramChange={setDiagramSvg}
             />
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-700">
-                  Answer Options & Correct Key Selection
-                </label>
-                <span className="text-[11px] text-slate-500">Select the radio button next to the single best answer</span>
-              </div>
+            {isShortAnswer ? (
+              <RichMathEditor
+                label="Expected Sample Answer / Marking Rubric"
+                value={sampleAnswer}
+                onChange={setSampleAnswer}
+                rows={3}
+                disabled={!canEditThisQuestion}
+                placeholder="Enter the model answer or key marking steps (supports $LaTeX$)..."
+              />
+            ) : (
               <div className="space-y-3">
-                {options.map((opt, idx) => {
-                  const isCorrect = opt.id === correctOptionId;
-                  return (
-                    <div
-                      key={opt.id}
-                      className={`p-3 rounded-xl border transition-colors ${
-                        isCorrect ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200 bg-slate-50/40'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
-                          <input
-                            type="radio"
-                            name={`correct-${currentQuestion.id}`}
-                            checked={isCorrect}
-                            disabled={!canEditThisQuestion}
-                            onChange={() => setCorrectOptionId(opt.id)}
-                            className="text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span>Option {opt.label}</span>
-                          {isCorrect && <span className="text-emerald-700 font-medium">· Correct Answer</span>}
-                        </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-700">
+                    Answer Options & Correct Key Selection
+                  </label>
+                  <span className="text-[11px] text-slate-500">Select the radio button next to the single best answer</span>
+                </div>
+                <div className="space-y-3">
+                  {visibleOptions.map((opt, idx) => {
+                    const isCorrect = opt.id === correctOptionId;
+                    return (
+                      <div
+                        key={opt.id}
+                        className={`p-3 rounded-xl border transition-colors ${
+                          isCorrect ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200 bg-slate-50/40'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-800">
+                            <input
+                              type="radio"
+                              name={`correct-${currentQuestion.id}`}
+                              checked={isCorrect}
+                              disabled={!canEditThisQuestion}
+                              onChange={() => setCorrectOptionId(opt.id)}
+                              className="text-emerald-600 focus:ring-emerald-500"
+                            />
+                            <span>Option {opt.label}</span>
+                            {isCorrect && <span className="text-emerald-700 font-medium">· Correct Answer</span>}
+                          </label>
+                        </div>
+                        <RichMathEditor
+                          value={opt.content}
+                          onChange={(val) => {
+                            const next = options.map((o, i) => (i === idx ? { ...o, content: val } : o));
+                            setOptions(next);
+                          }}
+                          rows={2}
+                          compact
+                          disabled={!canEditThisQuestion}
+                          placeholder={`Enter Option ${opt.label} content (supports $LaTeX$)...`}
+                        />
                       </div>
-                      <RichMathEditor
-                        value={opt.content}
-                        onChange={(val) => {
-                          const next = options.map((o, i) => (i === idx ? { ...o, content: val } : o));
-                          setOptions(next);
-                        }}
-                        rows={2}
-                        compact
-                        disabled={!canEditThisQuestion}
-                        placeholder={`Enter Option ${opt.label} content (supports $LaTeX$)...`}
-                      />
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             <RichMathEditor
               label="Solution Rationale / Marking Explanation"

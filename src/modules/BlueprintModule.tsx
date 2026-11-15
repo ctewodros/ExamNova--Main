@@ -14,6 +14,11 @@ import {
 import { useExamNova } from '../context/ExamNovaContext';
 import { Blueprint, TOSRow } from '../types/examnova';
 import { StatusText } from '../components/StatusText';
+import {
+  WorkflowTimeline,
+  BLUEPRINT_WORKFLOW_STAGES,
+  getBlueprintNextAction,
+} from '../components/WorkflowTimeline';
 
 export const BlueprintModule: React.FC = () => {
   const {
@@ -27,6 +32,7 @@ export const BlueprintModule: React.FC = () => {
     difficultyLevels,
     questionTypes,
     users,
+    activeUser,
     saveBlueprint,
     transitionBlueprint,
     activateBlueprint,
@@ -332,9 +338,6 @@ export const BlueprintModule: React.FC = () => {
     });
   };
 
-  const workflowSteps = ['Draft', 'Submitted', 'Reviewed', 'Approved', 'Active'];
-  const currentStepIdx = Math.max(0, workflowSteps.indexOf(selectedBp.status));
-
   return (
     <div className="space-y-6">
       {/* Header & Back */}
@@ -410,8 +413,8 @@ export const BlueprintModule: React.FC = () => {
                     versions: [
                       {
                         version: nextVer,
-                        date: '2026-11-14',
-                        author: 'Dr. Selamawit Bekele',
+                        date: new Date().toISOString().slice(0, 10),
+                        author: activeUser.name,
                         summary: `Branched new draft v${nextVer} from Active v${selectedBp.version}.`,
                         status: 'Draft',
                       },
@@ -438,30 +441,13 @@ export const BlueprintModule: React.FC = () => {
         </div>
       </div>
 
-      {/* Workflow Stepper */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4">
-        <div className="grid grid-cols-5 gap-2">
-          {workflowSteps.map((step, i) => {
-            const done = i < currentStepIdx || selectedBp.status === 'Active';
-            const current = step === selectedBp.status;
-            return (
-              <div
-                key={step}
-                className={`px-3 py-2 rounded-lg border text-xs ${
-                  current
-                    ? 'border-blue-600 bg-blue-50/70 text-blue-900 font-semibold'
-                    : done
-                    ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800 font-medium'
-                    : 'border-slate-200 bg-slate-50 text-slate-400'
-                }`}
-              >
-                <div className="text-[10px] font-mono tabular-nums">STEP 0{i + 1}</div>
-                <div className="mt-0.5 truncate">{step}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      {/* Workflow Timeline */}
+      <WorkflowTimeline
+        currentStatus={selectedBp.status}
+        stages={BLUEPRINT_WORKFLOW_STAGES}
+        nextAction={getBlueprintNextAction(selectedBp.status, selectedBp.requirementsGenerated)}
+        feedbackComment={selectedBp.approvalComment || selectedBp.reviewComment}
+      />
 
       {/* Reviewer / Approver Action Panel */}
       {((currentRole === 'reviewer' && selectedBp.status === 'Submitted') ||
@@ -537,6 +523,60 @@ export const BlueprintModule: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {/* Topic, Cognitive & Difficulty Distribution Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 border-t border-slate-100 text-[11px]">
+          <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-lg space-y-1">
+            <div className="font-semibold text-slate-700">Topic Distribution</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-600 tabular-nums">
+              {Array.from(new Set(selectedBp.tosRows.map((r) => r.topicId))).map((tId) => {
+                const count = selectedBp.tosRows
+                  .filter((r) => r.topicId === tId)
+                  .reduce((acc, r) => acc + r.questionCount, 0);
+                const marks = selectedBp.tosRows
+                  .filter((r) => r.topicId === tId)
+                  .reduce((acc, r) => acc + r.questionCount * r.marksPerQuestion, 0);
+                return (
+                  <span key={tId}>
+                    {topics.find((t) => t.id === tId)?.name}: <strong className="font-mono text-slate-900">{count}Q</strong> ({marks}m)
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-lg space-y-1">
+            <div className="font-semibold text-slate-700">Cognitive Distribution</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-600 tabular-nums">
+              {Array.from(new Set(selectedBp.tosRows.map((r) => r.cognitiveLevelId))).map((cId) => {
+                const count = selectedBp.tosRows
+                  .filter((r) => r.cognitiveLevelId === cId)
+                  .reduce((acc, r) => acc + r.questionCount, 0);
+                const pct = val.sumQ ? Math.round((count / val.sumQ) * 100) : 0;
+                return (
+                  <span key={cId}>
+                    {cognitiveLevels.find((c) => c.id === cId)?.name}: <strong className="font-mono text-slate-900">{count}Q</strong> ({pct}%)
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-lg space-y-1">
+            <div className="font-semibold text-slate-700">Difficulty Balance</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-600 tabular-nums">
+              {Array.from(new Set(selectedBp.tosRows.map((r) => r.difficultyLevelId))).map((dId) => {
+                const count = selectedBp.tosRows
+                  .filter((r) => r.difficultyLevelId === dId)
+                  .reduce((acc, r) => acc + r.questionCount, 0);
+                const pct = val.sumQ ? Math.round((count / val.sumQ) * 100) : 0;
+                return (
+                  <span key={dId}>
+                    {difficultyLevels.find((d) => d.id === dId)?.name}: <strong className="font-mono text-slate-900">{count}Q</strong> ({pct}%)
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -605,7 +645,12 @@ export const BlueprintModule: React.FC = () => {
                       {editable ? (
                         <select
                           value={row.topicId}
-                          onChange={(e) => updateRow(row.id, { topicId: e.target.value })}
+                          onChange={(e) => {
+                            const nextTopicId = e.target.value;
+                            const topicLOs = subjectLOs.filter((l) => l.topicId === nextTopicId);
+                            const nextLoId = topicLOs[0]?.id ?? row.learningOutcomeId;
+                            updateRow(row.id, { topicId: nextTopicId, learningOutcomeId: nextLoId });
+                          }}
                           className="px-2 py-1 border border-slate-200 rounded bg-white"
                         >
                           {subjectTopics.map((t) => (
@@ -625,7 +670,10 @@ export const BlueprintModule: React.FC = () => {
                           onChange={(e) => updateRow(row.id, { learningOutcomeId: e.target.value })}
                           className="px-2 py-1 border border-slate-200 rounded bg-white max-w-[180px]"
                         >
-                          {subjectLOs.map((lo) => (
+                          {(subjectLOs.some((lo) => lo.topicId === row.topicId)
+                            ? subjectLOs.filter((lo) => lo.topicId === row.topicId)
+                            : subjectLOs
+                          ).map((lo) => (
                             <option key={lo.id} value={lo.id}>{lo.code}</option>
                           ))}
                         </select>

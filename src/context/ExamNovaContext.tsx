@@ -20,6 +20,7 @@ import {
   Topic,
   UserRole,
 } from '../types/examnova';
+import { PrintExportJob } from '../utils/exportDocument';
 import {
   INITIAL_AUDIT_LOGS,
   INITIAL_BLUEPRINTS,
@@ -125,12 +126,19 @@ interface ExamNovaContextValue extends PersistedState {
 
   // Curriculum
   addExamType: (item: Omit<ExamType, 'id'>) => void;
+  updateExamType: (item: ExamType) => void;
   addSubject: (item: Omit<Subject, 'id'>) => void;
+  updateSubject: (item: Subject) => void;
   addTopic: (subjectId: string, name: string, code: string, subtopics: string[]) => void;
+  updateTopic: (topicId: string, subjectId: string, name: string, code: string, subtopics: string[]) => void;
   addLearningOutcome: (item: Omit<LearningOutcome, 'id'>) => void;
+  updateLearningOutcome: (item: LearningOutcome) => void;
   addCognitiveLevel: (item: Omit<CognitiveLevel, 'id'>) => void;
+  updateCognitiveLevel: (item: CognitiveLevel) => void;
   addDifficultyLevel: (item: Omit<DifficultyLevel, 'id'>) => void;
+  updateDifficultyLevel: (item: DifficultyLevel) => void;
   addQuestionType: (item: Omit<QuestionType, 'id'>) => void;
+  updateQuestionType: (item: QuestionType) => void;
 
   // Blueprints
   saveBlueprint: (bp: Blueprint) => void;
@@ -186,6 +194,8 @@ interface ExamNovaContextValue extends PersistedState {
     decision: 'Approved' | 'Returned for Revision',
     comment: string
   ) => void;
+  printJob: PrintExportJob | null;
+  triggerPdfExport: (job: PrintExportJob) => void;
 }
 
 const ExamNovaContext = createContext<ExamNovaContextValue | null>(null);
@@ -231,6 +241,7 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [selectedExamId, setSelectedExamId] = useState<string | null>('exam-math-assembly');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [printJob, setPrintJob] = useState<PrintExportJob | null>(null);
 
   useEffect(() => {
     try {
@@ -254,6 +265,38 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const dismissToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const triggerPdfExport = (job: PrintExportJob) => {
+    setPrintJob(job);
+    const originalTitle = document.title;
+    const suggestedTitle =
+      job.kind === 'exam'
+        ? `${job.exam.code} - ${job.exam.title}${job.includeAnswerKey ? ' (Answer Key)' : ''}`
+        : job.questions.length === 1
+        ? `ExamNova Question Bank - ${job.questions[0].id}`
+        : `${job.title} (${job.questions.length} Items)`;
+
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener('afterprint', restoreTitle);
+    };
+
+    window.addEventListener('afterprint', restoreTitle);
+    notifyToast('Opening print-to-PDF dialog. Choose "Save as PDF" as the destination.', 'info');
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        document.title = suggestedTitle;
+        window.print();
+        // Fallback restore for browsers where afterprint does not fire consistently
+        setTimeout(() => {
+          if (document.title === suggestedTitle) {
+            restoreTitle();
+          }
+        }, 1500);
+      }, 120);
+    });
   };
 
   const appendLogAndNotif = (
@@ -409,12 +452,28 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     notifyToast(`Added Exam Type "${item.name}"`);
   };
 
+  const updateExamType = (item: ExamType) => {
+    setState((prev) => ({
+      ...prev,
+      examTypes: prev.examTypes.map((e) => (e.id === item.id ? item : e)),
+    }));
+    notifyToast(`Updated Exam Type "${item.name}"`);
+  };
+
   const addSubject = (item: Omit<Subject, 'id'>) => {
     setState((prev) => ({
       ...prev,
       subjects: [...prev.subjects, { ...item, id: `subj-${Date.now()}` }],
     }));
     notifyToast(`Added Subject "${item.name}"`);
+  };
+
+  const updateSubject = (item: Subject) => {
+    setState((prev) => ({
+      ...prev,
+      subjects: prev.subjects.map((s) => (s.id === item.id ? item : s)),
+    }));
+    notifyToast(`Updated Subject "${item.name}"`);
   };
 
   const addTopic = (subjectId: string, name: string, code: string, subtopics: string[]) => {
@@ -436,12 +495,40 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     notifyToast(`Added Topic "${name}"`);
   };
 
+  const updateTopic = (topicId: string, subjectId: string, name: string, code: string, subtopics: string[]) => {
+    setState((prev) => ({
+      ...prev,
+      topics: prev.topics.map((t) =>
+        t.id === topicId
+          ? {
+              ...t,
+              subjectId,
+              name,
+              code,
+              subtopics: subtopics
+                .filter((s) => s.trim())
+                .map((s, idx) => ({ id: t.subtopics[idx]?.id ?? `sub-${Date.now()}-${idx}`, name: s.trim() })),
+            }
+          : t
+      ),
+    }));
+    notifyToast(`Updated Topic "${name}"`);
+  };
+
   const addLearningOutcome = (item: Omit<LearningOutcome, 'id'>) => {
     setState((prev) => ({
       ...prev,
       learningOutcomes: [...prev.learningOutcomes, { ...item, id: `lo-${Date.now()}` }],
     }));
     notifyToast(`Added Learning Outcome ${item.code}`);
+  };
+
+  const updateLearningOutcome = (item: LearningOutcome) => {
+    setState((prev) => ({
+      ...prev,
+      learningOutcomes: prev.learningOutcomes.map((l) => (l.id === item.id ? item : l)),
+    }));
+    notifyToast(`Updated Learning Outcome ${item.code}`);
   };
 
   const addCognitiveLevel = (item: Omit<CognitiveLevel, 'id'>) => {
@@ -452,6 +539,14 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     notifyToast(`Added Cognitive Level "${item.name}"`);
   };
 
+  const updateCognitiveLevel = (item: CognitiveLevel) => {
+    setState((prev) => ({
+      ...prev,
+      cognitiveLevels: prev.cognitiveLevels.map((c) => (c.id === item.id ? item : c)),
+    }));
+    notifyToast(`Updated Cognitive Level "${item.name}"`);
+  };
+
   const addDifficultyLevel = (item: Omit<DifficultyLevel, 'id'>) => {
     setState((prev) => ({
       ...prev,
@@ -460,12 +555,28 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     notifyToast(`Added Difficulty Level "${item.name}"`);
   };
 
+  const updateDifficultyLevel = (item: DifficultyLevel) => {
+    setState((prev) => ({
+      ...prev,
+      difficultyLevels: prev.difficultyLevels.map((d) => (d.id === item.id ? item : d)),
+    }));
+    notifyToast(`Updated Difficulty Level "${item.name}"`);
+  };
+
   const addQuestionType = (item: Omit<QuestionType, 'id'>) => {
     setState((prev) => ({
       ...prev,
       questionTypes: [...prev.questionTypes, { ...item, id: `qt-${Date.now()}` }],
     }));
     notifyToast(`Added Question Type "${item.name}"`);
+  };
+
+  const updateQuestionType = (item: QuestionType) => {
+    setState((prev) => ({
+      ...prev,
+      questionTypes: prev.questionTypes.map((qt) => (qt.id === item.id ? item : qt)),
+    }));
+    notifyToast(`Updated Question Type "${item.name}"`);
   };
 
   // Blueprints
@@ -626,6 +737,21 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       bp.tosRows.forEach((row) => {
         for (let i = 0; i < row.questionCount; i++) {
           const qId = `q-${pkgId}-${slot}`;
+          const isShort = row.questionTypeId === 'qt-short';
+          const isTF = row.questionTypeId === 'qt-tf';
+          const defaultOptions = isShort
+            ? []
+            : isTF
+            ? [
+                { id: `${qId}-a`, label: 'A', content: 'True' },
+                { id: `${qId}-b`, label: 'B', content: 'False' },
+              ]
+            : [
+                { id: `${qId}-a`, label: 'A', content: '' },
+                { id: `${qId}-b`, label: 'B', content: '' },
+                { id: `${qId}-c`, label: 'C', content: '' },
+                { id: `${qId}-d`, label: 'D', content: '' },
+              ];
           generatedQuestions.push({
             id: qId,
             packageId: pkgId,
@@ -640,13 +766,9 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             questionTypeId: row.questionTypeId,
             marks: row.marksPerQuestion,
             stem: '',
-            options: [
-              { id: `${qId}-a`, label: 'A', content: '' },
-              { id: `${qId}-b`, label: 'B', content: '' },
-              { id: `${qId}-c`, label: 'C', content: '' },
-              { id: `${qId}-d`, label: 'D', content: '' },
-            ],
-            correctOptionId: `${qId}-a`,
+            options: defaultOptions,
+            correctOptionId: isShort ? '' : `${qId}-a`,
+            sampleAnswer: isShort ? '' : undefined,
             rationale: '',
             authoringStatus: 'Not Started',
             reviewStatus: 'Draft',
@@ -1297,12 +1419,19 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         markNotificationRead,
         markAllNotificationsRead,
         addExamType,
+        updateExamType,
         addSubject,
+        updateSubject,
         addTopic,
+        updateTopic,
         addLearningOutcome,
+        updateLearningOutcome,
         addCognitiveLevel,
+        updateCognitiveLevel,
         addDifficultyLevel,
+        updateDifficultyLevel,
         addQuestionType,
+        updateQuestionType,
         saveBlueprint,
         transitionBlueprint,
         activateBlueprint,
@@ -1319,6 +1448,8 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         submitExamForReview,
         reviewExamDecision,
         approveExamDecision,
+        printJob,
+        triggerPdfExport,
       }}
     >
       {children}

@@ -11,11 +11,26 @@ import {
   X,
   Sparkles,
   Trash2,
+  Download,
+  FileText,
+  Search,
 } from 'lucide-react';
 import { useExamNova } from '../context/ExamNovaContext';
 import { Blueprint, Examination } from '../types/examnova';
 import { StatusText } from '../components/StatusText';
 import { MathRenderer } from '../components/MathRenderer';
+import { ExportModal } from '../components/ExportModal';
+import {
+  SavedFilterBar,
+  SavedFilterPreset,
+  useSavedFilters,
+} from '../components/SavedFilterBar';
+import {
+  WorkflowTimeline,
+  EXAM_WORKFLOW_STAGES,
+  getExamNextAction,
+} from '../components/WorkflowTimeline';
+import { exportExamToWord } from '../utils/exportDocument';
 
 function computeExamValidation(exam: Examination, bp: Blueprint | undefined, allQuestions: ReturnType<typeof useExamNova>['questions']) {
   if (!bp) {
@@ -74,7 +89,20 @@ const ExamPaperPreviewModal: React.FC<{
   exam: Examination;
   onClose: () => void;
 }> = ({ exam, onClose }) => {
-  const { blueprints, subjects, examTypes, questions, topics } = useExamNova();
+  const {
+    blueprints,
+    subjects,
+    examTypes,
+    questions,
+    topics,
+    learningOutcomes,
+    cognitiveLevels,
+    difficultyLevels,
+    questionTypes,
+    settings,
+    triggerPdfExport,
+    notifyToast,
+  } = useExamNova();
   const [showKey, setShowKey] = useState(false);
 
   const bp = blueprints.find((b) => b.id === exam.blueprintId);
@@ -84,11 +112,46 @@ const ExamPaperPreviewModal: React.FC<{
     .map((id) => questions.find((q) => q.id === id))
     .filter((q): q is NonNullable<typeof q> => Boolean(q));
 
+  const handleDirectPdf = () => {
+    triggerPdfExport({
+      kind: 'exam',
+      exam,
+      blueprint: bp,
+      questions: selectedItems,
+      includeAnswerKey: showKey,
+      includeMetadata: false,
+    });
+  };
+
+  const handleDirectWord = () => {
+    const filename = exportExamToWord(
+      {
+        kind: 'exam',
+        exam,
+        blueprint: bp,
+        questions: selectedItems,
+        includeAnswerKey: showKey,
+        includeMetadata: false,
+      },
+      {
+        institutionName: settings.institutionName,
+        examTypes,
+        subjects,
+        topics,
+        learningOutcomes,
+        cognitiveLevels,
+        difficultyLevels,
+        questionTypes,
+      }
+    );
+    notifyToast(`Downloaded Word document: ${filename}`);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col overflow-hidden">
-        <div className="px-6 py-3.5 border-b border-slate-200 flex items-center justify-between bg-slate-50 no-print">
-          <div className="flex items-center gap-4">
+        <div className="px-6 py-3.5 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50 no-print">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="text-sm font-bold text-slate-900">Examination Paper Preview</span>
             <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 cursor-pointer">
               <input
@@ -100,14 +163,22 @@ const ExamPaperPreviewModal: React.FC<{
               <span>Show Answer Key & Rationales</span>
             </label>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => window.print()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg"
+              onClick={handleDirectPdf}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg whitespace-nowrap shrink-0"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Print Paper</span>
+              <span>Download PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDirectWord}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap shrink-0"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Export Word (.doc)</span>
             </button>
             <button
               type="button"
@@ -120,6 +191,18 @@ const ExamPaperPreviewModal: React.FC<{
         </div>
 
         <div className="p-8 overflow-y-auto space-y-6">
+          <WorkflowTimeline
+            currentStatus={exam.status}
+            stages={EXAM_WORKFLOW_STAGES}
+            compact
+            nextAction={getExamNextAction(exam.status, {
+              selectedQuestions: selectedItems.length,
+              targetQuestions: bp?.totalQuestions ?? 0,
+            })}
+            feedbackComment={exam.approvalComment || exam.reviewComment}
+            className="no-print"
+          />
+
           {/* Exam Header Sheet */}
           <div className="border-b-2 border-slate-900 pb-5 text-center space-y-1.5">
             <div className="text-xs font-semibold tracking-wider text-slate-500">{et}</div>
@@ -149,24 +232,40 @@ const ExamPaperPreviewModal: React.FC<{
                   <div className="pl-6 py-2" dangerouslySetInnerHTML={{ __html: q.diagramSvg }} />
                 )}
 
-                <div className="pl-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {q.options.map((opt) => {
-                    const isKey = opt.id === q.correctOptionId;
-                    return (
-                      <div
-                        key={opt.id}
-                        className={`flex items-start gap-2 px-3 py-1.5 rounded text-xs ${
-                          showKey && isKey
-                            ? 'bg-emerald-50 border border-emerald-300 font-semibold text-emerald-950'
-                            : 'text-slate-800'
-                        }`}
-                      >
-                        <span className="font-mono font-semibold">{opt.label}.</span>
-                        <MathRenderer content={opt.content} className="text-xs" />
+                {q.questionTypeId === 'qt-short' || q.options.length === 0 ? (
+                  <div className="pl-6 space-y-2 pt-1">
+                    {showKey ? (
+                      <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded text-xs text-emerald-950">
+                        <span className="font-semibold">Expected Sample Answer:</span>{' '}
+                        <MathRenderer content={q.sampleAnswer || 'See Rubric'} className="inline text-xs" />
                       </div>
-                    );
-                  })}
-                </div>
+                    ) : (
+                      <div className="space-y-3 pt-1">
+                        <div className="border-b border-dashed border-slate-300 h-4" />
+                        <div className="border-b border-dashed border-slate-300 h-4" />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="pl-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {(q.questionTypeId === 'qt-tf' ? q.options.slice(0, 2) : q.options).map((opt) => {
+                      const isKey = opt.id === q.correctOptionId;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`flex items-start gap-2 px-3 py-1.5 rounded text-xs ${
+                            showKey && isKey
+                              ? 'bg-emerald-50 border border-emerald-300 font-semibold text-emerald-950'
+                              : 'text-slate-800'
+                          }`}
+                        >
+                          <span className="font-mono font-semibold">{opt.label}.</span>
+                          <MathRenderer content={opt.content} className="text-xs" />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {showKey && (
                   <div className="ml-6 p-2.5 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700">
@@ -211,6 +310,7 @@ export const ExamAssemblyView: React.FC = () => {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newCode, setNewCode] = useState('');
   const [newBpId, setNewBpId] = useState(activeBlueprints[0]?.id ?? '');
@@ -332,6 +432,17 @@ export const ExamAssemblyView: React.FC = () => {
 
       {currentExam && bp && val && (
         <>
+          <WorkflowTimeline
+            currentStatus={currentExam.status}
+            stages={EXAM_WORKFLOW_STAGES}
+            compact
+            nextAction={getExamNextAction(currentExam.status, {
+              selectedQuestions: val.totalSelected,
+              targetQuestions: bp.totalQuestions,
+            })}
+            feedbackComment={currentExam.approvalComment || currentExam.reviewComment}
+          />
+
           {/* Validation & Actions Header */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -357,10 +468,18 @@ export const ExamAssemblyView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setPreviewOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>Preview Exam Paper</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export PDF / Word</span>
                 </button>
 
                 {canEdit && (
@@ -693,6 +812,9 @@ export const ExamAssemblyView: React.FC = () => {
       {previewOpen && currentExam && (
         <ExamPaperPreviewModal exam={currentExam} onClose={() => setPreviewOpen(false)} />
       )}
+      {exportOpen && currentExam && (
+        <ExportModal mode="exam" exam={currentExam} onClose={() => setExportOpen(false)} />
+      )}
     </div>
   );
 };
@@ -703,6 +825,7 @@ export const ExamReviewQueueView: React.FC = () => {
   const [selectedId, setSelectedId] = useState(queue[0]?.id ?? '');
   const [comment, setComment] = useState('Blueprint balance, readability, and marking scheme verified.');
   const [previewExam, setPreviewExam] = useState<Examination | null>(null);
+  const [exportExam, setExportExam] = useState<Examination | null>(null);
 
   const activeExam = queue.find((e) => e.id === selectedId) || queue[0];
   const bp = blueprints.find((b) => b.id === activeExam?.blueprintId);
@@ -739,7 +862,19 @@ export const ExamReviewQueueView: React.FC = () => {
           </div>
 
           {activeExam && bp && val && (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+            <>
+              <WorkflowTimeline
+                currentStatus={activeExam.status}
+                stages={EXAM_WORKFLOW_STAGES}
+                compact
+                nextAction={getExamNextAction(activeExam.status, {
+                  selectedQuestions: val.totalSelected,
+                  targetQuestions: bp.totalQuestions,
+                })}
+                feedbackComment={activeExam.approvalComment || activeExam.reviewComment}
+              />
+
+              <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3">
@@ -751,14 +886,24 @@ export const ExamReviewQueueView: React.FC = () => {
                     {val.totalMarks} / {bp.totalMarks} Marks · Validation {val.pct}%
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPreviewExam(activeExam)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shrink-0"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Inspect Full Exam Paper</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewExam(activeExam)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Inspect Full Exam Paper</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportExam(activeExam)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export PDF / Word</span>
+                  </button>
+                </div>
               </div>
 
               <textarea
@@ -788,11 +933,13 @@ export const ExamReviewQueueView: React.FC = () => {
                 </button>
               </div>
             </div>
+            </>
           )}
         </div>
       )}
 
       {previewExam && <ExamPaperPreviewModal exam={previewExam} onClose={() => setPreviewExam(null)} />}
+      {exportExam && <ExportModal mode="exam" exam={exportExam} onClose={() => setExportExam(null)} />}
     </div>
   );
 };
@@ -803,6 +950,7 @@ export const ExamApprovalQueueView: React.FC = () => {
   const [selectedId, setSelectedId] = useState(queue[0]?.id ?? '');
   const [comment, setComment] = useState('Approved for official Exam Bank archival and institutional administration.');
   const [previewExam, setPreviewExam] = useState<Examination | null>(null);
+  const [exportExam, setExportExam] = useState<Examination | null>(null);
 
   const activeExam = queue.find((e) => e.id === selectedId) || queue[0];
   const bp = blueprints.find((b) => b.id === activeExam?.blueprintId);
@@ -838,7 +986,19 @@ export const ExamApprovalQueueView: React.FC = () => {
           </select>
 
           {activeExam && bp && val && (
-            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+            <>
+              <WorkflowTimeline
+                currentStatus={activeExam.status}
+                stages={EXAM_WORKFLOW_STAGES}
+                compact
+                nextAction={getExamNextAction(activeExam.status, {
+                  selectedQuestions: val.totalSelected,
+                  targetQuestions: bp.totalQuestions,
+                })}
+                feedbackComment={activeExam.approvalComment || activeExam.reviewComment}
+              />
+
+              <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3">
@@ -855,14 +1015,24 @@ export const ExamApprovalQueueView: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPreviewExam(activeExam)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg shrink-0"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>Preview Official Paper</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewExam(activeExam)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>Preview Official Paper</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportExam(activeExam)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export PDF / Word</span>
+                  </button>
+                </div>
               </div>
 
               <textarea
@@ -891,27 +1061,204 @@ export const ExamApprovalQueueView: React.FC = () => {
                 </button>
               </div>
             </div>
+            </>
           )}
         </div>
       )}
 
       {previewExam && <ExamPaperPreviewModal exam={previewExam} onClose={() => setPreviewExam(null)} />}
+      {exportExam && <ExportModal mode="exam" exam={exportExam} onClose={() => setExportExam(null)} />}
     </div>
   );
 };
 
+interface ExamBankFilters {
+  search: string;
+  filterExamType: string;
+  filterSubject: string;
+}
+
+const DEFAULT_EB_FILTERS: ExamBankFilters = {
+  search: '',
+  filterExamType: 'all',
+  filterSubject: 'all',
+};
+
+const DEFAULT_EB_PRESETS: SavedFilterPreset<ExamBankFilters>[] = [
+  {
+    id: 'eb-preset-g12',
+    name: 'Grade 12 National Papers',
+    filters: {
+      search: '',
+      filterExamType: 'et-g12',
+      filterSubject: 'all',
+    },
+    summary: 'Grade 12 National Exam',
+    savedAt: '2026-11-14',
+  },
+  {
+    id: 'eb-preset-math',
+    name: 'Mathematics Exam Bank',
+    filters: {
+      search: '',
+      filterExamType: 'all',
+      filterSubject: 'subj-math',
+    },
+    summary: 'Mathematics',
+    savedAt: '2026-11-14',
+  },
+];
+
 export const ExamBankView: React.FC = () => {
-  const { examinations, blueprints, subjects, examTypes } = useExamNova();
+  const { examinations, blueprints, subjects, examTypes, questions, triggerPdfExport, notifyToast } =
+    useExamNova();
   const approvedExams = examinations.filter((e) => e.status === 'Approved');
+  const [filters, setFilters] = useState<ExamBankFilters>(DEFAULT_EB_FILTERS);
+  const { search, filterExamType, filterSubject } = filters;
+
   const [previewExam, setPreviewExam] = useState<Examination | null>(null);
+  const [exportExam, setExportExam] = useState<Examination | null>(null);
+
+  const filteredExams = approvedExams.filter((ex) => {
+    const matchesSearch =
+      !search.trim() ||
+      ex.title.toLowerCase().includes(search.toLowerCase()) ||
+      ex.code.toLowerCase().includes(search.toLowerCase()) ||
+      ex.instructions.toLowerCase().includes(search.toLowerCase());
+    const matchesET = filterExamType === 'all' || ex.examTypeId === filterExamType;
+    const matchesSubj = filterSubject === 'all' || ex.subjectId === filterSubject;
+    return matchesSearch && matchesET && matchesSubj;
+  });
+
+  const activeFilterParts: string[] = [];
+  if (filterExamType !== 'all') {
+    const name = examTypes.find((e) => e.id === filterExamType)?.name;
+    if (name) activeFilterParts.push(name);
+  }
+  if (filterSubject !== 'all') {
+    const name = subjects.find((s) => s.id === filterSubject)?.name;
+    if (name) activeFilterParts.push(name);
+  }
+  if (search.trim()) {
+    activeFilterParts.push(`Search: "${search.trim()}"`);
+  }
+
+  const hasActiveFilters = activeFilterParts.length > 0;
+  const activeSummary = activeFilterParts.join(' · ') || 'All Approved Exams';
+  const suggestedName = activeFilterParts.slice(0, 2).join(' · ') || 'Custom Exam Filter';
+
+  const savedStore = useSavedFilters<ExamBankFilters>({
+    storageKey: 'examnova_eb_saved_searches_v1',
+    currentFilters: filters,
+    activeSummary,
+    hasActiveFilters,
+    defaultPresets: DEFAULT_EB_PRESETS,
+  });
+
+  const handleApplySaved = (nextFilters: ExamBankFilters, summary?: string) => {
+    setFilters(nextFilters);
+    savedStore.recordRecent(nextFilters, summary || nextFilters.search || 'Saved Filter');
+  };
+
+  const handleDirectExamPdf = (ex: Examination) => {
+    const bp = blueprints.find((b) => b.id === ex.blueprintId);
+    const examQuestions = ex.selectedQuestionIds
+      .map((id) => questions.find((q) => q.id === id))
+      .filter((q): q is NonNullable<typeof q> => Boolean(q));
+
+    triggerPdfExport({
+      kind: 'exam',
+      exam: ex,
+      blueprint: bp,
+      questions: examQuestions,
+      includeAnswerKey: false,
+      includeMetadata: false,
+    });
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900">Official Exam Bank</h1>
-        <p className="text-sm text-slate-500">
-          Certified, approved examinations ready for secure printing, scheduling, and institutional delivery.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">Official Exam Bank</h1>
+          <p className="text-sm text-slate-500">
+            Certified, approved examinations ready for secure printing, scheduling, and institutional delivery.
+          </p>
+        </div>
+        <div className="text-xs font-mono tabular-nums text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0">
+          Showing <strong>{filteredExams.length}</strong> of <strong>{approvedExams.length}</strong> Approved Exams
+        </div>
+      </div>
+
+      {/* Exam Bank Search & Saved Filters */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+          <div className="relative md:col-span-2">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (search.trim() || hasActiveFilters)) {
+                  e.preventDefault();
+                  savedStore.recordRecent(filters, activeSummary);
+                }
+              }}
+              placeholder="Search exam code, title, or instructions (press Enter to save to recent)..."
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setFilters((prev) => ({ ...prev, search: '' }))}
+                aria-label="Clear exam search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <select
+            value={filterExamType}
+            onChange={(e) => setFilters((prev) => ({ ...prev, filterExamType: e.target.value }))}
+            className="px-3 py-2 border border-slate-200 rounded-lg bg-white"
+          >
+            <option value="all">All Exam Types</option>
+            {examTypes.map((et) => (
+              <option key={et.id} value={et.id}>{et.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={filterSubject}
+            onChange={(e) => setFilters((prev) => ({ ...prev, filterSubject: e.target.value }))}
+            className="px-3 py-2 border border-slate-200 rounded-lg bg-white"
+          >
+            <option value="all">All Subjects</option>
+            {subjects.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <SavedFilterBar<ExamBankFilters>
+          presets={savedStore.presets}
+          recent={savedStore.recent}
+          hasActiveFilters={hasActiveFilters}
+          suggestedName={suggestedName}
+          activeSummary={activeSummary}
+          onApply={handleApplySaved}
+          onSavePreset={(name) => {
+            savedStore.savePreset(name);
+            notifyToast(`Saved Exam Bank filter "${name}".`);
+          }}
+          onDeletePreset={savedStore.deletePreset}
+          onDeleteRecent={savedStore.deleteRecent}
+          onClearRecent={savedStore.clearRecent}
+          onResetFilters={() => setFilters(DEFAULT_EB_FILTERS)}
+        />
       </div>
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -924,51 +1271,78 @@ export const ExamBankView: React.FC = () => {
               <th className="py-3 px-4 text-right">Items</th>
               <th className="py-3 px-4 text-right">Marks · Duration</th>
               <th className="py-3 px-4">Status</th>
-              <th className="py-3 px-4 text-right">Preview</th>
+              <th className="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
-            {approvedExams.map((ex) => {
-              const bp = blueprints.find((b) => b.id === ex.blueprintId);
-              const subj = subjects.find((s) => s.id === ex.subjectId)?.name ?? '';
-              const et = examTypes.find((e) => e.id === ex.examTypeId)?.name ?? '';
+            {filteredExams.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="py-8 text-center text-slate-500">
+                  No approved examinations match the active search or filter configuration.
+                </td>
+              </tr>
+            ) : (
+              filteredExams.map((ex) => {
+                const bp = blueprints.find((b) => b.id === ex.blueprintId);
+                const subj = subjects.find((s) => s.id === ex.subjectId)?.name ?? '';
+                const et = examTypes.find((e) => e.id === ex.examTypeId)?.name ?? '';
 
-              return (
-                <tr key={ex.id} className="hover:bg-slate-50/70">
-                  <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
-                    {ex.code} <span className="text-slate-400">v{ex.version}</span>
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-900">{ex.title}</td>
-                  <td className="py-3.5 px-4 text-slate-600">
-                    {subj} · {et}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-800">
-                    {ex.selectedQuestionIds.length}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-700">
-                    {bp?.totalMarks ?? 40}m · {bp?.durationMinutes ?? 60}min
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <StatusText status={ex.status} />
-                  </td>
-                  <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewExam(ex)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Open Exam Paper</span>
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+                return (
+                  <tr key={ex.id} className="hover:bg-slate-50/70">
+                    <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
+                      {ex.code} <span className="text-slate-400">v{ex.version}</span>
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-900">{ex.title}</td>
+                    <td className="py-3.5 px-4 text-slate-600">
+                      {subj} · {et}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-800">
+                      {ex.selectedQuestionIds.length}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-700">
+                      {bp?.totalMarks ?? 40}m · {bp?.durationMinutes ?? 60}min
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <StatusText status={ex.status} />
+                    </td>
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewExam(ex)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Open Exam Paper</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDirectExamPdf(ex)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap shrink-0"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Download PDF</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExportExam(ex)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Export Options</span>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
       {previewExam && <ExamPaperPreviewModal exam={previewExam} onClose={() => setPreviewExam(null)} />}
+      {exportExam && <ExportModal mode="exam" exam={exportExam} onClose={() => setExportExam(null)} />}
     </div>
   );
 };

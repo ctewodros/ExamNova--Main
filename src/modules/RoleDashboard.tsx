@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
+import { WorkflowTimelineExplorer } from '../components/WorkflowTimeline';
 import { ROLES } from '../data/seedData';
 
 export const RoleDashboard: React.FC = () => {
@@ -287,6 +288,9 @@ export const RoleDashboard: React.FC = () => {
           ))}
         </div>
       </section>
+
+      {/* Interactive Workflow Timeline Explorer */}
+      <WorkflowTimelineExplorer />
 
       {/* Role-Specific Primary Operational Tables */}
       {currentRole === 'coordinator' && (

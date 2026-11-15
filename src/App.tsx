@@ -30,6 +30,7 @@ import {
   ExamBankView,
   ExamReviewQueueView,
 } from './modules/ExamManagementModule';
+import { PrintSheet } from './components/PrintSheet';
 
 const ActiveModuleRouter: React.FC = () => {
   const { activeModule } = useExamNova();
@@ -85,9 +86,12 @@ const ActiveModuleRouter: React.FC = () => {
 export default function App() {
   return (
     <ExamNovaProvider>
-      <LayoutShell>
-        <ActiveModuleRouter />
-      </LayoutShell>
+      <div className="no-print">
+        <LayoutShell>
+          <ActiveModuleRouter />
+        </LayoutShell>
+      </div>
+      <PrintSheet />
     </ExamNovaProvider>
   );
 }
