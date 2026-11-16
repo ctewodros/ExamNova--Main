@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
-import { FileText, Printer, X, Download } from 'lucide-react';
+import { FileText, Printer, X, Download, FileCode2, FileSpreadsheet } from 'lucide-react';
 import { Examination, QuestionItem } from '../types/examnova';
 import { useExamNova } from '../context/ExamNovaContext';
-import { exportExamToWord, exportQuestionBankToWord } from '../utils/exportDocument';
+import {
+  exportExamToMoodleGift,
+  exportExamToMoodleXml,
+  exportExamToWord,
+  exportQuestionBankToWord,
+} from '../utils/exportDocument';
 
 interface ExportModalProps {
   mode: 'exam' | 'question_bank';
@@ -36,7 +41,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     notifyToast,
   } = useExamNova();
 
-  const [format, setFormat] = useState<'pdf' | 'word'>('pdf');
+  const [format, setFormat] = useState<'pdf' | 'word' | 'moodle_xml' | 'moodle_gift'>('pdf');
   const [includeAnswerKey, setIncludeAnswerKey] = useState(mode === 'question_bank');
   const [includeMetadata, setIncludeMetadata] = useState(mode === 'question_bank');
   const [bankScope, setBankScope] = useState<'filtered' | 'all'>('filtered');
@@ -72,6 +77,44 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           lookup
         );
         notifyToast(`Downloaded Word document: ${filename}`);
+        onClose();
+      } else if (format === 'moodle_xml') {
+        const filename = exportExamToMoodleXml(
+          {
+            kind: 'exam',
+            exam,
+            blueprint: bp,
+            questions: examQuestions,
+            includeAnswerKey,
+            includeMetadata,
+          },
+          lookup,
+          {
+            categoryPath: settings.moodleTargetCategory,
+            shuffleAnswers: settings.moodleShuffleAnswers,
+            includeFeedback: includeAnswerKey,
+            includeMetadata,
+          }
+        );
+        notifyToast(`Downloaded Moodle XML import package: ${filename}`);
+        onClose();
+      } else if (format === 'moodle_gift') {
+        const filename = exportExamToMoodleGift(
+          {
+            kind: 'exam',
+            exam,
+            blueprint: bp,
+            questions: examQuestions,
+            includeAnswerKey,
+            includeMetadata,
+          },
+          lookup,
+          {
+            categoryPath: settings.moodleTargetCategory,
+            includeFeedback: includeAnswerKey,
+          }
+        );
+        notifyToast(`Downloaded Moodle GIFT file: ${filename}`);
         onClose();
       } else {
         onClose();
@@ -129,9 +172,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       ? filteredQuestions.length
       : allBankQuestions.length;
 
+  const ctaLabel =
+    format === 'pdf'
+      ? 'Export as PDF'
+      : format === 'word'
+      ? 'Download Word (.doc)'
+      : format === 'moodle_xml'
+      ? 'Download Moodle XML (.xml)'
+      : 'Download Moodle GIFT (.txt)';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 no-print">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
         <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-slate-900">
@@ -188,6 +240,46 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   Editable Word file with MathML equations & tables.
                 </div>
               </button>
+
+              {mode === 'exam' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setFormat('moodle_xml')}
+                    className={`p-3 rounded-lg border text-left transition-colors ${
+                      format === 'moodle_xml'
+                        ? 'border-blue-600 bg-blue-50/70 text-blue-900'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-semibold">
+                      <FileCode2 className="w-4 h-4 text-blue-600" />
+                      <span>Moodle XML (.xml)</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      Moodle Question Bank import with HTML/MathJax & categories.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormat('moodle_gift')}
+                    className={`p-3 rounded-lg border text-left transition-colors ${
+                      format === 'moodle_gift'
+                        ? 'border-blue-600 bg-blue-50/70 text-blue-900'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-semibold">
+                      <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+                      <span>Moodle GIFT (.txt)</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      Lightweight Moodle GIFT plain-text import format.
+                    </div>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -231,9 +323,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 className="mt-0.5 rounded text-blue-600"
               />
               <div>
-                <div className="font-medium text-slate-800">Include Answer Key & Solution Rationales</div>
+                <div className="font-medium text-slate-800">
+                  {format.startsWith('moodle_')
+                    ? 'Include General Feedback & Solution Rationales'
+                    : 'Include Answer Key & Solution Rationales'}
+                </div>
                 <div className="text-[11px] text-slate-500">
-                  Highlights correct keys, appends rationales, and includes a summary key table for exams.
+                  {format.startsWith('moodle_')
+                    ? 'Populates Moodle <generalfeedback> notes alongside graded answer keys.'
+                    : 'Highlights correct keys, appends rationales, and includes a summary key table for exams.'}
                 </div>
               </div>
             </label>
@@ -248,7 +346,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               <div>
                 <div className="font-medium text-slate-800">Include Taxonomy & Item Metadata</div>
                 <div className="text-[11px] text-slate-500">
-                  Displays Item ID, version, Topic, Learning Outcome, Cognitive, and Difficulty tags.
+                  {format.startsWith('moodle_')
+                    ? 'Exports Topic, Learning Outcome, Cognitive, and Difficulty tags into Moodle.'
+                    : 'Displays Item ID, version, Topic, Learning Outcome, Cognitive, and Difficulty tags.'}
                 </div>
               </div>
             </label>
@@ -267,10 +367,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             type="button"
             disabled={targetCount === 0}
             onClick={handleExport}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:bg-slate-300"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:bg-slate-300 whitespace-nowrap shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>{format === 'pdf' ? 'Export as PDF' : 'Download Word (.doc)'}</span>
+            <span>{ctaLabel}</span>
           </button>
         </div>
       </div>

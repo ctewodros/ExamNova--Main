@@ -14,6 +14,8 @@ import {
   Download,
   FileText,
   Search,
+  FileCode2,
+  UploadCloud,
 } from 'lucide-react';
 import { useExamNova } from '../context/ExamNovaContext';
 import { Blueprint, Examination } from '../types/examnova';
@@ -30,7 +32,11 @@ import {
   EXAM_WORKFLOW_STAGES,
   getExamNextAction,
 } from '../components/WorkflowTimeline';
-import { exportExamToWord } from '../utils/exportDocument';
+import {
+  exportExamsBatchToMoodleXml,
+  exportExamToMoodleXml,
+  exportExamToWord,
+} from '../utils/exportDocument';
 
 function computeExamValidation(exam: Examination, bp: Blueprint | undefined, allQuestions: ReturnType<typeof useExamNova>['questions']) {
   if (!bp) {
@@ -1110,12 +1116,29 @@ const DEFAULT_EB_PRESETS: SavedFilterPreset<ExamBankFilters>[] = [
 ];
 
 export const ExamBankView: React.FC = () => {
-  const { examinations, blueprints, subjects, examTypes, questions, triggerPdfExport, notifyToast } =
-    useExamNova();
+  const {
+    examinations,
+    blueprints,
+    subjects,
+    examTypes,
+    topics,
+    learningOutcomes,
+    cognitiveLevels,
+    difficultyLevels,
+    questionTypes,
+    questions,
+    settings,
+    currentRole,
+    setActiveModule,
+    pushExamsToMoodle,
+    triggerPdfExport,
+    notifyToast,
+  } = useExamNova();
   const approvedExams = examinations.filter((e) => e.status === 'Approved');
   const [filters, setFilters] = useState<ExamBankFilters>(DEFAULT_EB_FILTERS);
   const { search, filterExamType, filterSubject } = filters;
 
+  const [selectedExamIds, setSelectedExamIds] = useState<string[]>([]);
   const [previewExam, setPreviewExam] = useState<Examination | null>(null);
   const [exportExam, setExportExam] = useState<Examination | null>(null);
 
@@ -1129,6 +1152,25 @@ export const ExamBankView: React.FC = () => {
     const matchesSubj = filterSubject === 'all' || ex.subjectId === filterSubject;
     return matchesSearch && matchesET && matchesSubj;
   });
+
+  const filteredIds = filteredExams.map((e) => e.id);
+  const visibleSelectedIds = selectedExamIds.filter((id) => filteredIds.includes(id));
+  const allFilteredSelected =
+    filteredExams.length > 0 && visibleSelectedIds.length === filteredExams.length;
+
+  const toggleSelectExam = (examId: string) => {
+    setSelectedExamIds((prev) =>
+      prev.includes(examId) ? prev.filter((id) => id !== examId) : [...prev, examId]
+    );
+  };
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelectedExamIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      setSelectedExamIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
 
   const activeFilterParts: string[] = [];
   if (filterExamType !== 'all') {
@@ -1160,6 +1202,17 @@ export const ExamBankView: React.FC = () => {
     savedStore.recordRecent(nextFilters, summary || nextFilters.search || 'Saved Filter');
   };
 
+  const exportLookup = {
+    institutionName: settings.institutionName,
+    examTypes,
+    subjects,
+    topics,
+    learningOutcomes,
+    cognitiveLevels,
+    difficultyLevels,
+    questionTypes,
+  };
+
   const handleDirectExamPdf = (ex: Examination) => {
     const bp = blueprints.find((b) => b.id === ex.blueprintId);
     const examQuestions = ex.selectedQuestionIds
@@ -1176,13 +1229,68 @@ export const ExamBankView: React.FC = () => {
     });
   };
 
+  const handleDirectMoodleDownload = (ex: Examination) => {
+    const bp = blueprints.find((b) => b.id === ex.blueprintId);
+    const examQuestions = ex.selectedQuestionIds
+      .map((id) => questions.find((q) => q.id === id))
+      .filter((q): q is NonNullable<typeof q> => Boolean(q));
+
+    const filename = exportExamToMoodleXml(
+      {
+        kind: 'exam',
+        exam: ex,
+        blueprint: bp,
+        questions: examQuestions,
+        includeAnswerKey: settings.moodleSyncAnswerKeyAndFeedback,
+        includeMetadata: true,
+      },
+      exportLookup,
+      {
+        categoryPath: settings.moodleTargetCategory,
+        shuffleAnswers: settings.moodleShuffleAnswers,
+        includeFeedback: settings.moodleSyncAnswerKeyAndFeedback,
+        includeMetadata: true,
+      }
+    );
+    notifyToast(`Downloaded Moodle import XML: ${filename}`);
+  };
+
+  const handleSelectedMoodleDownload = () => {
+    if (selectedExamIds.length === 0) return;
+    const bundle = approvedExams
+      .filter((ex) => selectedExamIds.includes(ex.id))
+      .map((ex) => ({
+        exam: ex,
+        blueprint: blueprints.find((b) => b.id === ex.blueprintId),
+        questions: ex.selectedQuestionIds
+          .map((id) => questions.find((q) => q.id === id))
+          .filter((q): q is NonNullable<typeof q> => Boolean(q)),
+      }));
+
+    if (bundle.length === 0) return;
+    const filename = exportExamsBatchToMoodleXml(bundle, exportLookup, {
+      categoryPath: settings.moodleTargetCategory,
+      shuffleAnswers: settings.moodleShuffleAnswers,
+      includeFeedback: settings.moodleSyncAnswerKeyAndFeedback,
+      includeMetadata: true,
+    });
+    notifyToast(`Downloaded Moodle XML package: ${filename}`);
+  };
+
+  const handlePushSelectedToMoodle = () => {
+    const pushed = pushExamsToMoodle(selectedExamIds, 'exam_bank');
+    if (pushed > 0) {
+      setSelectedExamIds([]);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Official Exam Bank</h1>
           <p className="text-sm text-slate-500">
-            Certified, approved examinations ready for secure printing, scheduling, and institutional delivery.
+            Certified, approved examinations ready for secure printing, Moodle LMS export, and institutional delivery.
           </p>
         </div>
         <div className="text-xs font-mono tabular-nums text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0">
@@ -1261,23 +1369,95 @@ export const ExamBankView: React.FC = () => {
         />
       </div>
 
+      {/* Selected Exams Moodle Sync & Batch Download Bar */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-slate-600">
+          <span className="font-semibold text-slate-900 tabular-nums">
+            {selectedExamIds.length} exam{selectedExamIds.length === 1 ? '' : 's'} selected
+          </span>
+          <span className="text-slate-300" aria-hidden="true">·</span>
+          <span>
+            Target LMS:{' '}
+            <strong className="text-slate-800">
+              {settings.moodleEnabled
+                ? `${settings.moodleBaseUrl} (${settings.moodleTargetCourseId})`
+                : 'Moodle Integration Disabled'}
+            </strong>
+          </span>
+          {currentRole === 'admin' && (
+            <button
+              type="button"
+              onClick={() => setActiveModule('admin_settings')}
+              className="text-blue-600 hover:text-blue-800 font-medium underline whitespace-nowrap"
+            >
+              Configure Integration
+            </button>
+          )}
+          {selectedExamIds.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSelectedExamIds([])}
+              className="text-slate-500 hover:text-slate-800 font-medium whitespace-nowrap"
+            >
+              Clear Selection
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            disabled={selectedExamIds.length === 0}
+            onClick={handleSelectedMoodleDownload}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+          >
+            <FileCode2 className="w-3.5 h-3.5" />
+            <span>
+              Download Moodle XML{selectedExamIds.length > 0 ? ` (${selectedExamIds.length})` : ''}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={selectedExamIds.length === 0 || !settings.moodleEnabled}
+            onClick={handlePushSelectedToMoodle}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:bg-slate-300 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+          >
+            <UploadCloud className="w-3.5 h-3.5" />
+            <span>
+              {selectedExamIds.length > 0
+                ? `Push Selected to Moodle (${selectedExamIds.length})`
+                : 'Push to Moodle (Select Exams)'}
+            </span>
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+              <th className="py-3 px-4 w-10">
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAllFiltered}
+                  aria-label="Select all filtered exams"
+                  className="rounded border-slate-300 text-blue-600 cursor-pointer"
+                />
+              </th>
               <th className="py-3 px-4">Code · Version</th>
               <th className="py-3 px-4">Examination Title</th>
               <th className="py-3 px-4">Exam Type · Subject</th>
               <th className="py-3 px-4 text-right">Items</th>
               <th className="py-3 px-4 text-right">Marks · Duration</th>
-              <th className="py-3 px-4">Status</th>
+              <th className="py-3 px-4">Status · Moodle Sync</th>
               <th className="py-3 px-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-xs">
             {filteredExams.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-slate-500">
+                <td colSpan={8} className="py-8 text-center text-slate-500">
                   No approved examinations match the active search or filter configuration.
                 </td>
               </tr>
@@ -1286,9 +1466,22 @@ export const ExamBankView: React.FC = () => {
                 const bp = blueprints.find((b) => b.id === ex.blueprintId);
                 const subj = subjects.find((s) => s.id === ex.subjectId)?.name ?? '';
                 const et = examTypes.find((e) => e.id === ex.examTypeId)?.name ?? '';
+                const isSelected = selectedExamIds.includes(ex.id);
 
                 return (
-                  <tr key={ex.id} className="hover:bg-slate-50/70">
+                  <tr
+                    key={ex.id}
+                    className={isSelected ? 'bg-blue-50/40 hover:bg-blue-50/60' : 'hover:bg-slate-50/70'}
+                  >
+                    <td className="py-3.5 px-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectExam(ex.id)}
+                        aria-label={`Select ${ex.code}`}
+                        className="rounded border-slate-300 text-blue-600 cursor-pointer"
+                      />
+                    </td>
                     <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
                       {ex.code} <span className="text-slate-400">v{ex.version}</span>
                     </td>
@@ -1302,8 +1495,15 @@ export const ExamBankView: React.FC = () => {
                     <td className="py-3.5 px-4 text-right font-mono tabular-nums text-slate-700">
                       {bp?.totalMarks ?? 40}m · {bp?.durationMinutes ?? 60}min
                     </td>
-                    <td className="py-3.5 px-4">
-                      <StatusText status={ex.status} />
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <div className="space-y-0.5">
+                        <StatusText status={ex.status} />
+                        <div className="text-[11px] font-mono tabular-nums text-slate-500">
+                          {ex.moodleSync
+                            ? `Moodle Synced · ${ex.moodleSync.moodleQuizId}`
+                            : 'Not pushed to Moodle'}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="inline-flex items-center justify-end gap-2">
@@ -1313,7 +1513,15 @@ export const ExamBankView: React.FC = () => {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg whitespace-nowrap shrink-0"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>Open Exam Paper</span>
+                          <span>Open Paper</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDirectMoodleDownload(ex)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+                        >
+                          <FileCode2 className="w-3.5 h-3.5" />
+                          <span>Moodle XML</span>
                         </button>
                         <button
                           type="button"
@@ -1321,15 +1529,15 @@ export const ExamBankView: React.FC = () => {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg whitespace-nowrap shrink-0"
                         >
                           <Printer className="w-3.5 h-3.5" />
-                          <span>Download PDF</span>
+                          <span>PDF</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setExportExam(ex)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg whitespace-nowrap shrink-0"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg whitespace-nowrap shrink-0"
                         >
                           <Download className="w-3.5 h-3.5" />
-                          <span>Export Options</span>
+                          <span>More Formats</span>
                         </button>
                       </div>
                     </td>

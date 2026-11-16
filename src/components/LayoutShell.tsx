@@ -25,6 +25,7 @@ import {
   X,
   RotateCcw,
   GraduationCap,
+  BarChart3,
 } from 'lucide-react';
 import { AppModuleId, UserRole } from '../types/examnova';
 import { ROLES } from '../data/seedData';
@@ -53,6 +54,7 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
     packages,
     blueprints,
     examinations,
+    settings,
     toasts,
     dismissToast,
     resetDemoData,
@@ -60,6 +62,11 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  React.useEffect(() => {
+    setLogoFailed(false);
+  }, [settings.logoUrl]);
 
   const unreadCount = notifications.filter(
     (n) => !n.read && (n.targetRole === currentRole || n.targetRole === 'all')
@@ -79,7 +86,10 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
         return [
           {
             title: 'Overview',
-            items: [{ id: 'dashboard', label: 'Admin Dashboard', icon: LayoutDashboard }],
+            items: [
+              { id: 'dashboard', label: 'Admin Dashboard', icon: LayoutDashboard },
+              { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+            ],
           },
           {
             title: 'Administration',
@@ -105,7 +115,10 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
         return [
           {
             title: 'Overview',
-            items: [{ id: 'dashboard', label: 'Coordinator Dashboard', icon: LayoutDashboard }],
+            items: [
+              { id: 'dashboard', label: 'Coordinator Dashboard', icon: LayoutDashboard },
+              { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+            ],
           },
           {
             title: 'Curriculum & Blueprints',
@@ -279,6 +292,7 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
     exam_review: 'Exam Review',
     exam_approval: 'Exam Approval',
     exam_bank: 'Exam Bank',
+    analytics: 'Analytics & Insights',
     notifications: 'Notifications',
   };
 
@@ -306,12 +320,25 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
         {/* Brand Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80 shrink-0">
           <div className="flex items-center gap-2.5 overflow-hidden">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 text-white">
-              <GraduationCap className="w-4.5 h-4.5" />
-            </div>
+            {settings.logoUrl && !logoFailed ? (
+              <img
+                src={settings.logoUrl}
+                alt={settings.platformName || 'ExamNova'}
+                referrerPolicy="no-referrer"
+                onError={() => setLogoFailed(true)}
+                className="w-8 h-8 rounded-lg object-contain bg-white p-0.5 shrink-0"
+              />
+            ) : (
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-white"
+                style={{ backgroundColor: settings.primaryAccentColor || '#2563EB' }}
+              >
+                <GraduationCap className="w-4.5 h-4.5" />
+              </div>
+            )}
             {!collapsed && (
-              <span className="font-display font-bold text-base tracking-tight text-white whitespace-nowrap">
-                ExamNova
+              <span className="font-display font-bold text-base tracking-tight text-white whitespace-nowrap truncate">
+                {settings.platformName || 'ExamNova'}
               </span>
             )}
           </div>
@@ -468,6 +495,23 @@ export const LayoutShell: React.FC<{ children: React.ReactNode }> = ({ children 
 
         {/* Main Workspace Viewport */}
         <main className="flex-1 p-4 lg:p-8 max-w-[1440px] w-full mx-auto">
+          {settings.maintenanceMode && (
+            <div className="mb-5 px-4 py-2.5 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 text-xs flex items-center justify-between gap-3 no-print">
+              <span className="font-medium">
+                <strong className="font-semibold">Maintenance Notice:</strong>{' '}
+                {settings.maintenanceBannerMessage || 'System maintenance mode is currently enabled.'}
+              </span>
+              {currentRole === 'admin' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveModule('admin_settings')}
+                  className="text-amber-900 underline font-semibold whitespace-nowrap shrink-0"
+                >
+                  Manage Settings
+                </button>
+              )}
+            </div>
+          )}
           {children}
         </main>
       </div>

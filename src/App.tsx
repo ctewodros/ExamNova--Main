@@ -30,6 +30,7 @@ import {
   ExamBankView,
   ExamReviewQueueView,
 } from './modules/ExamManagementModule';
+import { AnalyticsModule } from './modules/AnalyticsModule';
 import { PrintSheet } from './components/PrintSheet';
 
 const ActiveModuleRouter: React.FC = () => {
@@ -78,6 +79,8 @@ const ActiveModuleRouter: React.FC = () => {
       return <ExamApprovalQueueView />;
     case 'exam_bank':
       return <ExamBankView />;
+    case 'analytics':
+      return <AnalyticsModule />;
     default:
       return <RoleDashboard />;
   }

@@ -30,18 +30,31 @@ export const PrintSheet: React.FC = () => {
   return (
     <div id="examnova-print-sheet" className="hidden print:block bg-white text-slate-900 p-6 max-w-none">
       {/* Formal Document Header */}
-      <div className="border-b-2 border-slate-900 pb-4 mb-6 text-center space-y-1">
+      <div className="border-b-2 border-slate-900 pb-4 mb-6 text-center space-y-1.5">
+        {settings.logoUrl && (
+          <img
+            src={settings.logoUrl}
+            alt={settings.institutionName}
+            referrerPolicy="no-referrer"
+            className="h-12 w-auto mx-auto object-contain mb-1"
+          />
+        )}
         <div className="text-[11px] font-semibold tracking-wider text-slate-600 uppercase">
           {settings.institutionName} · {isExam ? examType : 'Certified Question Bank Export'}
         </div>
         <h1 className="text-xl font-bold text-slate-900">
           {isExam ? printJob.exam.title : printJob.title}
         </h1>
+        {isExam && settings.watermarkDraftPapers && printJob.exam.status !== 'Approved' && (
+          <div className="text-[11px] font-mono font-semibold text-amber-800 border border-amber-300 bg-amber-50 inline-block px-3 py-0.5 rounded">
+            DRAFT SPECIFICATION — STATUS: {printJob.exam.status.toUpperCase()}
+          </div>
+        )}
         {isExam ? (
           <>
             <div className="text-xs text-slate-700 font-medium tabular-nums">
               Subject: {examSubject} · Paper Code: <span className="font-mono">{printJob.exam.code}</span> · Version {printJob.exam.version} · Duration:{' '}
-              {printJob.blueprint?.durationMinutes ?? 60} Minutes · Total Marks:{' '}
+              {printJob.blueprint?.durationMinutes ?? settings.defaultExamDurationMinutes} Minutes · Total Marks:{' '}
               {printJob.blueprint?.totalMarks ?? 40} · Pass Mark: {printJob.blueprint?.passMark ?? 20}
             </div>
             <p className="text-xs text-slate-700 bg-slate-50 border border-slate-300 rounded px-3 py-2 text-left mt-2">

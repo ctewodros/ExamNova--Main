@@ -43,6 +43,7 @@ export type AppModuleId =
   | 'exam_approval'
   | 'exam_bank'
   // Shared
+  | 'analytics'
   | 'notifications';
 
 export interface PlatformUser {
@@ -262,6 +263,16 @@ export type ExamStatus =
   | 'Pending Final Approval'
   | 'Approved';
 
+export interface MoodleSyncRecord {
+  status: 'Synced';
+  syncedAt: string;
+  courseId: string;
+  categoryPath: string;
+  moodleQuizId: string;
+  format: 'moodle_xml' | 'gift';
+  autoPushed: boolean;
+}
+
 export interface Examination {
   id: string;
   title: string;
@@ -281,6 +292,7 @@ export interface Examination {
   createdAt: string;
   updatedAt: string;
   history: RevisionEntry[];
+  moodleSync?: MoodleSyncRecord;
 }
 
 export interface RolePermissionMatrix {
@@ -300,14 +312,78 @@ export interface RolePermissionMatrix {
   };
 }
 
+export type SmtpEncryption = 'TLS' | 'SSL' | 'NONE';
+export type OtpDeliveryChannel = 'email' | 'authenticator' | 'sms';
+export type BackupFrequency = 'Daily' | 'Weekly' | 'Monthly';
+
 export interface SystemSettings {
+  // Branding & Portal
+  platformName: string;
   institutionName: string;
+  institutionTagline: string;
   academicCycle: string;
+  supportEmail: string;
+  logoUrl: string;
+  faviconUrl: string;
+  primaryAccentColor: string;
+
+  // SMTP Configuration
+  smtpEnabled: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpEncryption: SmtpEncryption;
+  smtpUsername: string;
+  smtpPassword: string;
+  smtpFromName: string;
+  smtpFromEmail: string;
+
+  // Security & OTP
+  otpEnabled: boolean;
+  otpDeliveryChannel: OtpDeliveryChannel;
+  otpExpiryMinutes: number;
+  otpEnforceRoles: UserRole[];
+  sessionTimeoutMinutes: number;
+  maxLoginAttempts: number;
+  passwordMinLength: number;
+  requireStrongPasswords: boolean;
+  ipAllowlistEnabled: boolean;
+  ipAllowlist: string;
+
+  // Examination & Workflow Governance
   minQuestionRationaleLength: number;
+  defaultExamDurationMinutes: number;
+  reviewSlaDays: number;
+  maxQuestionsPerPackage: number;
   requireBlueprintDualSignoff: boolean;
   lockSubmittedQuestions: boolean;
   autoArchiveSupersededBlueprints: boolean;
-  defaultExamDurationMinutes: number;
+  watermarkDraftPapers: boolean;
+
+  // Notifications, Retention & Operations
+  emailNotificationsOnReturn: boolean;
+  emailNotificationsOnApproval: boolean;
+  auditLogRetentionDays: number;
+  autoBackupEnabled: boolean;
+  backupFrequency: BackupFrequency;
+  maintenanceMode: boolean;
+  maintenanceBannerMessage: string;
+
+  // Assessment Tool Integration (Moodle LMS & Connectors)
+  moodleEnabled: boolean;
+  moodleBaseUrl: string;
+  moodleWebServiceToken: string;
+  moodleServiceName: string;
+  moodleTargetCourseId: string;
+  moodleTargetCategory: string;
+  moodleImportFormat: 'moodle_xml' | 'gift';
+  moodleAutoPushOnApproval: boolean;
+  moodleSyncSelectedExamIds: string[];
+  moodleSyncAnswerKeyAndFeedback: boolean;
+  moodleQuizTimeLimitSync: boolean;
+  moodleShuffleAnswers: boolean;
+  moodleLastTestedAt?: string;
+  qtiExportEnabled: boolean;
+  safeExamBrowserRequired: boolean;
 }
 
 export interface AuditLogEntry {

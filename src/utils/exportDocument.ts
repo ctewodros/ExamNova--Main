@@ -349,3 +349,255 @@ export function exportQuestionBankToWord(job: QuestionBankExportJob, lookup: Exp
   triggerBlobDownload(filename, html, 'application/msword;charset=utf-8');
   return filename;
 }
+
+export interface MoodleExportOptions {
+  categoryPath?: string;
+  shuffleAnswers?: boolean;
+  includeFeedback?: boolean;
+  includeMetadata?: boolean;
+}
+
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function wrapCdata(html: string): string {
+  // Guard against literal ]]> inside CDATA
+  return `<![CDATA[${html.replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+/**
+ * Converts $...$ and $$...$$ delimiters to Moodle's standard MathJax filter delimiters \(...\) and \[...\].
+ */
+function formatHtmlForMoodle(raw: string): string {
+  if (!raw) return '';
+  let out = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_m, expr) => `\\[${expr.trim()}\\]`);
+  out = out.replace(/\$([^$\n]+?)\$/g, (_m, expr) => `\\(${expr.trim()}\\)`);
+  return out.replace(/\n/g, '<br/>');
+}
+
+function buildMoodleQuestionXml(
+  q: QuestionItem,
+  indexNumber: number,
+  lookup: ExportLookup,
+  options: MoodleExportOptions
+): string {
+  const top = lookup.topics.find((t) => t.id === q.topicId)?.name ?? 'General';
+  const lo = lookup.learningOutcomes.find((l) => l.id === q.learningOutcomeId)?.code ?? '';
+  const cog = lookup.cognitiveLevels.find((c) => c.id === q.cognitiveLevelId)?.name ?? '';
+  const dif = lookup.difficultyLevels.find((d) => d.id === q.difficultyLevelId)?.name ?? '';
+  const shuffle = options.shuffleAnswers ?? true;
+  const includeFeedback = options.includeFeedback ?? true;
+  const includeMetadata = options.includeMetadata ?? true;
+
+  const qTitle = `Q${String(indexNumber).padStart(2, '0')} [${q.id}] - ${top}`;
+  const diagramHtml = q.diagramSvg ? `<div style="margin:8px 0;">${q.diagramSvg}</div>` : '';
+  const stemHtml = `<p>${formatHtmlForMoodle(q.stem)}</p>${diagramHtml}`;
+  const feedbackXml =
+    includeFeedback && q.rationale
+      ? `    <generalfeedback format="html">
+      <text>${wrapCdata(`<p>${formatHtmlForMoodle(q.rationale)}</p>`)}</text>
+    </generalfeedback>\n`
+      : '';
+
+  const tags = [top, lo, cog, dif, `v${q.version}`].filter(Boolean);
+  const tagsXml =
+    includeMetadata && tags.length > 0
+      ? `    <tags>\n${tags
+          .map((t) => `      <tag><text>${escapeXml(t)}</text></tag>`)
+          .join('\n')}\n    </tags>\n`
+      : '';
+
+  // True / False
+  if (q.questionTypeId === 'qt-tf') {
+    const correctOpt = q.options.find((o) => o.id === q.correctOptionId);
+    const isTrueCorrect =
+      correctOpt?.content.trim().toLowerCase() === 'true' || correctOpt?.label === 'A';
+    return `  <question type="truefalse">
+    <name><text>${escapeXml(qTitle)}</text></name>
+    <questiontext format="html">
+      <text>${wrapCdata(stemHtml)}</text>
+    </questiontext>
+${feedbackXml}    <defaultgrade>${q.marks.toFixed(7)}</defaultgrade>
+    <penalty>1.0000000</penalty>
+    <hidden>0</hidden>
+    <answer fraction="${isTrueCorrect ? '100' : '0'}" format="moodle_auto_format">
+      <text>true</text>
+    </answer>
+    <answer fraction="${isTrueCorrect ? '0' : '100'}" format="moodle_auto_format">
+      <text>false</text>
+    </answer>
+${tagsXml}  </question>`;
+  }
+
+  // Short Answer
+  if (q.questionTypeId === 'qt-short' || q.options.length === 0) {
+    const acceptedText = (q.sampleAnswer || 'Manual rubric grading required').trim();
+    return `  <question type="shortanswer">
+    <name><text>${escapeXml(qTitle)}</text></name>
+    <questiontext format="html">
+      <text>${wrapCdata(stemHtml)}</text>
+    </questiontext>
+${feedbackXml}    <defaultgrade>${q.marks.toFixed(7)}</defaultgrade>
+    <penalty>0.3333333</penalty>
+    <hidden>0</hidden>
+    <usecase>0</usecase>
+    <answer fraction="100" format="moodle_auto_format">
+      <text>${escapeXml(acceptedText)}</text>
+      <feedback format="html"><text>${wrapCdata('<p>Accepted key answer.</p>')}</text></feedback>
+    </answer>
+${tagsXml}  </question>`;
+  }
+
+  // Multiple Choice (Default)
+  const answersXml = q.options
+    .map((opt) => {
+      const fraction = opt.id === q.correctOptionId ? '100' : '0';
+      return `    <answer fraction="${fraction}" format="html">
+      <text>${wrapCdata(`<p>${formatHtmlForMoodle(opt.content)}</p>`)}</text>
+    </answer>`;
+    })
+    .join('\n');
+
+  return `  <question type="multichoice">
+    <name><text>${escapeXml(qTitle)}</text></name>
+    <questiontext format="html">
+      <text>${wrapCdata(stemHtml)}</text>
+    </questiontext>
+${feedbackXml}    <defaultgrade>${q.marks.toFixed(7)}</defaultgrade>
+    <penalty>0.3333333</penalty>
+    <hidden>0</hidden>
+    <single>true</single>
+    <shuffleanswers>${shuffle ? 'true' : 'false'}</shuffleanswers>
+    <answernumbering>abc</answernumbering>
+${answersXml}
+${tagsXml}  </question>`;
+}
+
+export function buildExamsMoodleXmlString(
+  examsWithQuestions: Array<{ exam: Examination; blueprint?: Blueprint; questions: QuestionItem[] }>,
+  lookup: ExportLookup,
+  options: MoodleExportOptions = {}
+): string {
+  const baseCategory = (options.categoryPath || '$course$/top/ExamNova-Certified').replace(/\/+$/, '');
+  const sections = examsWithQuestions
+    .map(({ exam, questions }) => {
+      const catLine = `  <question type="category">
+    <category><text>${escapeXml(`${baseCategory}/${exam.code}_v${exam.version}`)}</text></category>
+    <info format="html"><text>${wrapCdata(`<p>${escapeXml(exam.title)} — ${escapeXml(exam.instructions)}</p>`)}</text></info>
+  </question>`;
+      const qBlocks = questions
+        .map((q, idx) => buildMoodleQuestionXml(q, idx + 1, lookup, options))
+        .join('\n');
+      return `${catLine}\n${qBlocks}`;
+    })
+    .join('\n\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+<!-- Generated by ${escapeXml(lookup.institutionName)} · Moodle Import-Ready XML -->
+${sections}
+</quiz>
+`;
+}
+
+export function exportExamToMoodleXml(
+  job: ExamExportJob,
+  lookup: ExportLookup,
+  options: MoodleExportOptions = {}
+): string {
+  const xml = buildExamsMoodleXmlString(
+    [{ exam: job.exam, blueprint: job.blueprint, questions: job.questions }],
+    lookup,
+    {
+      ...options,
+      includeFeedback: options.includeFeedback ?? job.includeAnswerKey,
+      includeMetadata: options.includeMetadata ?? job.includeMetadata,
+    }
+  );
+  const filename = `${sanitizeFilename(job.exam.code || job.exam.title)}_moodle.xml`;
+  triggerBlobDownload(filename, xml, 'application/xml;charset=utf-8');
+  return filename;
+}
+
+export function exportExamsBatchToMoodleXml(
+  examsWithQuestions: Array<{ exam: Examination; blueprint?: Blueprint; questions: QuestionItem[] }>,
+  lookup: ExportLookup,
+  options: MoodleExportOptions = {}
+): string {
+  if (examsWithQuestions.length === 1) {
+    const single = examsWithQuestions[0];
+    return exportExamToMoodleXml(
+      {
+        kind: 'exam',
+        exam: single.exam,
+        blueprint: single.blueprint,
+        questions: single.questions,
+        includeAnswerKey: options.includeFeedback ?? true,
+        includeMetadata: options.includeMetadata ?? true,
+      },
+      lookup,
+      options
+    );
+  }
+  const xml = buildExamsMoodleXmlString(examsWithQuestions, lookup, options);
+  const filename = `ExamNova_Moodle_Bundle_${examsWithQuestions.length}_Exams.xml`;
+  triggerBlobDownload(filename, xml, 'application/xml;charset=utf-8');
+  return filename;
+}
+
+function escapeGift(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/~/g, '\\~')
+    .replace(/=/g, '\\=')
+    .replace(/#/g, '\\#')
+    .replace(/\{/g, '\\{')
+    .replace(/\}/g, '\\}')
+    .replace(/:/g, '\\:');
+}
+
+export function exportExamToMoodleGift(
+  job: ExamExportJob,
+  lookup: ExportLookup,
+  options: MoodleExportOptions = {}
+): string {
+  const baseCategory = (options.categoryPath || '$course$/top/ExamNova-Certified').replace(/\/+$/, '');
+  const includeFeedback = options.includeFeedback ?? job.includeAnswerKey;
+  const lines: string[] = [
+    `// ${lookup.institutionName} — Moodle GIFT Format`,
+    `$CATEGORY: ${baseCategory}/${job.exam.code}_v${job.exam.version}`,
+    '',
+  ];
+
+  job.questions.forEach((q, idx) => {
+    const qName = `Q${String(idx + 1).padStart(2, '0')} [${q.id}]`;
+    const stem = escapeGift(q.stem.replace(/\n+/g, ' '));
+    const rationale = includeFeedback && q.rationale ? ` #### ${escapeGift(q.rationale)}` : '';
+
+    if (q.questionTypeId === 'qt-tf') {
+      const correctOpt = q.options.find((o) => o.id === q.correctOptionId);
+      const isTrue = correctOpt?.content.trim().toLowerCase() === 'true' || correctOpt?.label === 'A';
+      lines.push(`::${qName}:: ${stem} {${isTrue ? 'T' : 'F'}${rationale}}`);
+    } else if (q.questionTypeId === 'qt-short' || q.options.length === 0) {
+      const ans = escapeGift(q.sampleAnswer || 'See Rubric');
+      lines.push(`::${qName}:: ${stem} {=${ans}${rationale}}`);
+    } else {
+      const opts = q.options
+        .map((opt) => `${opt.id === q.correctOptionId ? '=' : '~'}${escapeGift(opt.content)}`)
+        .join(' ');
+      lines.push(`::${qName}:: ${stem} {${opts}${rationale}}`);
+    }
+    lines.push('');
+  });
+
+  const filename = `${sanitizeFilename(job.exam.code || job.exam.title)}_moodle_gift.txt`;
+  triggerBlobDownload(filename, lines.join('\n'), 'text/plain;charset=utf-8');
+  return filename;
+}
+

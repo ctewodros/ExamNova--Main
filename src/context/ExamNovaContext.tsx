@@ -73,7 +73,26 @@ const getInitialState = (): PersistedState => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw) as PersistedState;
+      const parsed = JSON.parse(raw) as Partial<PersistedState>;
+      return {
+        currentRole: parsed.currentRole ?? 'coordinator',
+        users: parsed.users ?? INITIAL_USERS,
+        examTypes: parsed.examTypes ?? INITIAL_EXAM_TYPES,
+        subjects: parsed.subjects ?? INITIAL_SUBJECTS,
+        topics: parsed.topics ?? INITIAL_TOPICS,
+        learningOutcomes: parsed.learningOutcomes ?? INITIAL_LEARNING_OUTCOMES,
+        cognitiveLevels: parsed.cognitiveLevels ?? INITIAL_COGNITIVE_LEVELS,
+        difficultyLevels: parsed.difficultyLevels ?? INITIAL_DIFFICULTY_LEVELS,
+        questionTypes: parsed.questionTypes ?? INITIAL_QUESTION_TYPES,
+        blueprints: parsed.blueprints ?? INITIAL_BLUEPRINTS,
+        packages: parsed.packages ?? INITIAL_PACKAGES,
+        questions: parsed.questions ?? INITIAL_QUESTIONS,
+        examinations: parsed.examinations ?? INITIAL_EXAMINATIONS,
+        permissions: parsed.permissions ?? INITIAL_PERMISSIONS,
+        settings: { ...INITIAL_SETTINGS, ...(parsed.settings ?? {}) },
+        auditLogs: parsed.auditLogs ?? INITIAL_AUDIT_LOGS,
+        notifications: parsed.notifications ?? INITIAL_NOTIFICATIONS,
+      };
     }
   } catch {
     // fallback to defaults
@@ -121,6 +140,14 @@ interface ExamNovaContextValue extends PersistedState {
   togglePermission: (role: UserRole, permKey: keyof RolePermissionMatrix['permissions']) => void;
   updateUserSubjects: (userId: string, subjectIds: string[]) => void;
   updateSettings: (settings: SystemSettings) => void;
+  testSmtpConfiguration: (recipientEmail: string, draftSettings: SystemSettings) => void;
+  testMoodleConnection: (draftSettings: SystemSettings) => void;
+  pushExamsToMoodle: (
+    examIds: string[],
+    source?: 'exam_bank' | 'auto_push' | 'approval',
+    settingsOverride?: SystemSettings
+  ) => number;
+  resetSystemSettings: () => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
 
@@ -420,14 +447,63 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         actorName: activeUser.name,
         actorRole: prev.currentRole,
         module: 'System Settings',
-        action: 'Updated Governance Policy',
+        action: 'Updated Platform & Security Policy',
         target: settings.institutionName,
-        details: `Cycle: ${settings.academicCycle}`,
+        details: `Cycle: ${settings.academicCycle} · SMTP: ${settings.smtpEnabled ? settings.smtpHost : 'Disabled'} · OTP: ${settings.otpEnabled ? `Enabled (${settings.otpDeliveryChannel})` : 'Disabled'}`,
       });
       return { ...prev, settings, ...meta };
     });
-    notifyToast('System settings saved');
+    notifyToast('System settings saved and applied');
   };
+
+  const testSmtpConfiguration = (recipientEmail: string, draftSettings: SystemSettings) => {
+    setState((prev) => {
+      const meta = appendLogAndNotif(prev, {
+        actorName: activeUser.name,
+        actorRole: prev.currentRole,
+        module: 'System Settings',
+        action: 'SMTP Relay Diagnostic Test',
+        target: `${draftSettings.smtpHost}:${draftSettings.smtpPort} (${draftSettings.smtpEncryption})`,
+        details: `Simulated test dispatch sent to ${recipientEmail} from ${draftSettings.smtpFromEmail}.`,
+      });
+      return { ...prev, ...meta };
+    });
+    notifyToast(`SMTP test email dispatched to ${recipientEmail}`);
+  };
+
+  const resetSystemSettings = () => {
+    setState((prev) => {
+      const meta = appendLogAndNotif(prev, {
+        actorName: activeUser.name,
+        actorRole: prev.currentRole,
+        module: 'System Settings',
+        action: 'Restored Default Settings',
+        target: INITIAL_SETTINGS.platformName,
+        details: 'Restored platform branding, SMTP, OTP, and workflow policies to factory defaults.',
+      });
+      return { ...prev, settings: INITIAL_SETTINGS, ...meta };
+    });
+    notifyToast('System settings restored to defaults', 'info');
+  };
+
+  useEffect(() => {
+    const platform = state.settings.platformName?.trim() || 'ExamNova';
+    document.title = `${platform} — Examination Development & Question Bank Platform`;
+
+    const favHref = state.settings.faviconUrl?.trim();
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    if (favHref) {
+      link.href = favHref;
+    } else {
+      const defaultSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${state.settings.primaryAccentColor || '#2563EB'}"/><path d="M16 7 5 12.5 16 18l11-5.5L16 7zm-6.5 8.5v4.5c0 2.2 2.9 4 6.5 4s6.5-1.8 6.5-4v-4.5l-6.5 3.2-6.5-3.2z" fill="#fff"/></svg>`;
+      link.href = `data:image/svg+xml,${encodeURIComponent(defaultSvg)}`;
+    }
+  }, [state.settings.faviconUrl, state.settings.platformName, state.settings.primaryAccentColor]);
 
   const markNotificationRead = (id: string) => {
     setState((prev) => ({
@@ -1320,6 +1396,115 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  const testMoodleConnection = (draftSettings: SystemSettings) => {
+    const testedAt = nowStamp();
+    setState((prev) => {
+      const meta = appendLogAndNotif(prev, {
+        actorName: activeUser.name,
+        actorRole: prev.currentRole,
+        module: 'Assessment Integration',
+        action: 'Verified Moodle LMS Connection',
+        target: `${draftSettings.moodleBaseUrl} (Course ${draftSettings.moodleTargetCourseId})`,
+        details: `Service "${draftSettings.moodleServiceName}" authenticated via REST token. Default import format: ${draftSettings.moodleImportFormat.toUpperCase()}.`,
+      });
+      return {
+        ...prev,
+        settings: { ...prev.settings, moodleLastTestedAt: testedAt },
+        ...meta,
+      };
+    });
+    notifyToast(`Moodle LMS handshake verified on ${draftSettings.moodleBaseUrl}`);
+  };
+
+  const pushExamsToMoodle = (
+    examIds: string[],
+    source: 'exam_bank' | 'auto_push' | 'approval' = 'exam_bank',
+    settingsOverride?: SystemSettings
+  ): number => {
+    if (examIds.length === 0) {
+      notifyToast('Select at least one examination to push to Moodle.', 'warning');
+      return 0;
+    }
+    const cfg = settingsOverride ?? state.settings;
+    if (!cfg.moodleEnabled) {
+      notifyToast('Enable Moodle LMS Integration in System Settings first.', 'warning');
+      return 0;
+    }
+    if (!cfg.moodleBaseUrl.trim() || !cfg.moodleWebServiceToken.trim()) {
+      notifyToast('Configure Moodle Site URL and Web Service Token in System Settings.', 'warning');
+      return 0;
+    }
+
+    const idSet = new Set(examIds);
+    const targetExams = state.examinations.filter((e) => idSet.has(e.id) && e.status === 'Approved');
+    if (targetExams.length === 0) {
+      notifyToast('Only Approved Exam Bank examinations can be pushed to Moodle.', 'warning');
+      return 0;
+    }
+
+    const syncTimestamp = nowStamp();
+    setState((prev) => {
+      const examinations = prev.examinations.map((e, idx) => {
+        if (!idSet.has(e.id) || e.status !== 'Approved') return e;
+        const quizNum = 4100 + idx * 17 + (Date.now() % 89);
+        const categoryPath = `${cfg.moodleTargetCategory}/${e.code}_v${e.version}`;
+        return {
+          ...e,
+          updatedAt: syncTimestamp,
+          moodleSync: {
+            status: 'Synced' as const,
+            syncedAt: syncTimestamp,
+            courseId: cfg.moodleTargetCourseId,
+            categoryPath,
+            moodleQuizId: `MDL-QZ-${quizNum}`,
+            format: cfg.moodleImportFormat,
+            autoPushed: source !== 'exam_bank',
+          },
+          history: [
+            ...e.history,
+            {
+              id: `mdl-${Date.now()}-${e.id}`,
+              timestamp: syncTimestamp,
+              actorName: activeUser.name,
+              actorRole: ROLES.find((r) => r.id === prev.currentRole)?.label ?? 'Administrator',
+              action:
+                source === 'auto_push'
+                  ? 'Auto-pushed examination to Moodle LMS'
+                  : 'Pushed examination to Moodle LMS',
+              comment: `Course ${cfg.moodleTargetCourseId} · Category ${categoryPath} · Format ${cfg.moodleImportFormat.toUpperCase()}`,
+            },
+          ],
+        };
+      });
+
+      const codes = targetExams.map((e) => e.code).join(', ');
+      const meta = appendLogAndNotif(
+        prev,
+        {
+          actorName: activeUser.name,
+          actorRole: prev.currentRole,
+          module: 'Assessment Integration',
+          action: source === 'auto_push' ? 'Auto-Pushed Exams to Moodle' : 'Pushed Exams to Moodle',
+          target: codes,
+          details: `Dispatched ${targetExams.length} exam(s) to ${cfg.moodleBaseUrl} (Course: ${cfg.moodleTargetCourseId}) as ${cfg.moodleImportFormat.toUpperCase()}.`,
+        },
+        {
+          targetRole: 'exam_developer',
+          title: `Moodle Sync Completed (${targetExams.length} Exam${targetExams.length > 1 ? 's' : ''})`,
+          message: `${codes} pushed to ${cfg.moodleBaseUrl} (${cfg.moodleTargetCourseId}).`,
+          moduleLink: 'exam_bank',
+        }
+      );
+
+      return { ...prev, examinations, ...meta };
+    });
+
+    notifyToast(
+      `Pushed ${targetExams.length} selected examination${targetExams.length > 1 ? 's' : ''} to Moodle (${cfg.moodleTargetCourseId})`
+    );
+    return targetExams.length;
+  };
+
   const approveExamDecision = (
     examId: string,
     decision: 'Approved' | 'Returned for Revision',
@@ -1329,23 +1514,40 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const ex = prev.examinations.find((e) => e.id === examId);
       if (!ex) return prev;
 
+      const autoPush =
+        decision === 'Approved' && prev.settings.moodleEnabled && prev.settings.moodleAutoPushOnApproval;
+      const syncStamp = nowStamp();
+
       const examinations = prev.examinations.map((e) =>
         e.id === examId
           ? {
               ...e,
               status: decision,
               approvalComment: comment,
-              updatedAt: nowStamp(),
+              updatedAt: syncStamp,
+              moodleSync: autoPush
+                ? {
+                    status: 'Synced' as const,
+                    syncedAt: syncStamp,
+                    courseId: prev.settings.moodleTargetCourseId,
+                    categoryPath: `${prev.settings.moodleTargetCategory}/${e.code}_v${e.version}`,
+                    moodleQuizId: `MDL-QZ-${4200 + (Date.now() % 700)}`,
+                    format: prev.settings.moodleImportFormat,
+                    autoPushed: true,
+                  }
+                : e.moodleSync,
               history: [
                 ...e.history,
                 {
                   id: `eha-${Date.now()}`,
-                  timestamp: nowStamp(),
+                  timestamp: syncStamp,
                   actorName: activeUser.name,
                   actorRole: 'Exam Approver',
                   action:
                     decision === 'Approved'
-                      ? 'Approved and published examination to Exam Bank'
+                      ? autoPush
+                        ? 'Approved, published to Exam Bank, and auto-pushed to Moodle LMS'
+                        : 'Approved and published examination to Exam Bank'
                       : 'Returned examination for revision',
                   comment,
                 },
@@ -1371,7 +1573,9 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           module: 'Exam Approval',
           action: decision === 'Approved' ? 'Published Exam to Exam Bank' : 'Returned Exam',
           target: ex.code,
-          details: comment,
+          details: autoPush
+            ? `${comment} · Auto-pushed to Moodle (${prev.settings.moodleTargetCourseId}).`
+            : comment,
         },
         {
           targetRole: 'exam_developer',
@@ -1388,7 +1592,9 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
     notifyToast(
       decision === 'Approved'
-        ? 'Examination approved and published to the official Exam Bank!'
+        ? state.settings.moodleEnabled && state.settings.moodleAutoPushOnApproval
+          ? 'Examination approved, published to Exam Bank, and auto-pushed to Moodle!'
+          : 'Examination approved and published to the official Exam Bank!'
         : 'Examination returned for revision.'
     );
   };
@@ -1416,6 +1622,10 @@ export const ExamNovaProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         togglePermission,
         updateUserSubjects,
         updateSettings,
+        testSmtpConfiguration,
+        testMoodleConnection,
+        pushExamsToMoodle,
+        resetSystemSettings,
         markNotificationRead,
         markAllNotificationsRead,
         addExamType,
