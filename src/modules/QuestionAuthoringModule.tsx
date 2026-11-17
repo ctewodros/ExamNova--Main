@@ -11,11 +11,16 @@ import {
   Send,
   AlertCircle,
   History,
+  Tag,
+  Copy,
 } from 'lucide-react';
 import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
 import { RichMathEditor } from '../components/RichMathEditor';
 import { MathRenderer } from '../components/MathRenderer';
+import { BloomsTaxonomyTagger } from '../components/BloomsTaxonomyTagger';
+import { BulkDuplicateQuestionsModal } from '../components/BulkDuplicateQuestionsModal';
+import { getBloomsMeta } from '../utils/bloomsTaxonomy';
 import {
   WorkflowTimeline,
   PACKAGE_WORKFLOW_STAGES,
@@ -98,7 +103,8 @@ export const QuestionRequirementsView: React.FC = () => {
                     const subj = subjects.find((s) => s.id === bp.subjectId)?.name;
                     const top = topics.find((t) => t.id === row.topicId)?.name;
                     const lo = learningOutcomes.find((l) => l.id === row.learningOutcomeId)?.code;
-                    const cog = cognitiveLevels.find((c) => c.id === row.cognitiveLevelId)?.name;
+                    const cogObj = cognitiveLevels.find((c) => c.id === row.cognitiveLevelId);
+                    const cogMeta = getBloomsMeta(cogObj);
                     const dif = difficultyLevels.find((d) => d.id === row.difficultyLevelId)?.name;
                     const qt = questionTypes.find((q) => q.id === row.questionTypeId)?.code;
                     const inPipeline = questions.filter(
@@ -115,7 +121,8 @@ export const QuestionRequirementsView: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 font-mono text-slate-600">{lo}</td>
                         <td className="py-3 px-4 text-slate-700">
-                          {cog} · {dif}
+                          <span className="font-mono font-semibold text-slate-800">{cogMeta.code}</span>{' '}
+                          {cogObj?.name} · {dif}
                         </td>
                         <td className="py-3 px-4 font-mono text-slate-600">{qt}</td>
                         <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold text-slate-900">
@@ -295,10 +302,26 @@ export const MyWorkView: React.FC = () => {
     resubmitReturnedPackage,
   } = useExamNova();
 
+  const [bloomFilter, setBloomFilter] = useState<string>('all');
+  const [selectedDupIds, setSelectedDupIds] = useState<string[]>([]);
+  const [bulkDupOpen, setBulkDupOpen] = useState(false);
+
   const activePkg = packages.find((p) => p.id === selectedPackageId) || packages[0];
   const pkgQuestions = activePkg
     ? questions.filter((q) => q.packageId === activePkg.id).sort((a, b) => a.slotNumber - b.slotNumber)
     : [];
+
+  const orderedBlooms = [...cognitiveLevels].sort((a, b) => a.order - b.order);
+  const filteredPkgQuestions =
+    bloomFilter === 'all'
+      ? pkgQuestions
+      : pkgQuestions.filter((q) => q.cognitiveLevelId === bloomFilter);
+  const copyableVisibleIds = filteredPkgQuestions
+    .filter((q) => q.stem.trim().length > 0)
+    .map((q) => q.id);
+  const selectedDupSet = new Set(selectedDupIds);
+  const allCopyableChecked =
+    copyableVisibleIds.length > 0 && copyableVisibleIds.every((id) => selectedDupSet.has(id));
 
   const readyCount = pkgQuestions.filter((q) => q.authoringStatus === 'Ready').length;
   const totalCount = pkgQuestions.length;
@@ -359,6 +382,18 @@ export const MyWorkView: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setBulkDupOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg whitespace-nowrap"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedDupIds.length > 0
+                      ? `Bulk Duplicate (${selectedDupIds.length})`
+                      : 'Bulk Duplicate'}
+                  </span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -457,14 +492,104 @@ export const MyWorkView: React.FC = () => {
             feedbackComment={pkgQuestions.find((q) => q.reviewStatus === 'Returned')?.reviewerComment}
           />
 
+          {/* Bloom's Taxonomy Distribution & Filter Strip */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                <Tag className="w-3.5 h-3.5 text-blue-600" />
+                <span>Bloom&apos;s Taxonomy Distribution</span>
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-slate-500">
+                Showing {filteredPkgQuestions.length} of {pkgQuestions.length} items
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setBloomFilter('all')}
+                className={`px-2.5 py-1 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 ${
+                  bloomFilter === 'all'
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                All ({pkgQuestions.length})
+              </button>
+              {orderedBlooms.map((lvl) => {
+                const count = pkgQuestions.filter((q) => q.cognitiveLevelId === lvl.id).length;
+                const meta = getBloomsMeta(lvl);
+                const active = bloomFilter === lvl.id;
+                return (
+                  <button
+                    key={lvl.id}
+                    type="button"
+                    onClick={() => setBloomFilter(active ? 'all' : lvl.id)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 ${
+                      active
+                        ? meta.activeClass
+                        : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="font-mono font-bold">{meta.code}</span>
+                    <span>{meta.shortLabel}</span>
+                    <span className="font-mono tabular-nums opacity-75">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Assigned Question Requirement List */}
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+            {selectedDupIds.length > 0 && (
+              <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-medium text-blue-900 font-mono tabular-nums">
+                  {selectedDupIds.length} item{selectedDupIds.length > 1 ? 's' : ''} selected for duplication
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDupIds([])}
+                    className="px-2.5 py-1 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBulkDupOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Duplicate Selected as Drafts</span>
+                  </button>
+                </div>
+              </div>
+            )}
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                  <th className="py-3 px-3 w-9">
+                    <input
+                      type="checkbox"
+                      checked={allCopyableChecked}
+                      disabled={copyableVisibleIds.length === 0}
+                      onChange={() => {
+                        if (allCopyableChecked) {
+                          const visSet = new Set(copyableVisibleIds);
+                          setSelectedDupIds((prev) => prev.filter((id) => !visSet.has(id)));
+                        } else {
+                          setSelectedDupIds((prev) =>
+                            Array.from(new Set([...prev, ...copyableVisibleIds]))
+                          );
+                        }
+                      }}
+                      aria-label="Select all copyable questions"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </th>
                   <th className="py-3 px-4">#</th>
                   <th className="py-3 px-4">Topic · Subtopic</th>
-                  <th className="py-3 px-4">Cognitive · Difficulty</th>
+                  <th className="py-3 px-4">Bloom&apos;s Taxonomy · Difficulty</th>
                   <th className="py-3 px-4 text-right">Marks</th>
                   <th className="py-3 px-4">Authoring Status</th>
                   <th className="py-3 px-4">Workflow Status</th>
@@ -472,61 +597,130 @@ export const MyWorkView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
-                {pkgQuestions.map((q) => {
-                  const topicName = topics.find((t) => t.id === q.topicId)?.name ?? '';
-                  const cogName = cognitiveLevels.find((c) => c.id === q.cognitiveLevelId)?.name ?? '';
-                  const difName = difficultyLevels.find((d) => d.id === q.difficultyLevelId)?.name ?? '';
-                  const isEditable =
-                    isDraftStage || (isReturnedStage && q.reviewStatus === 'Returned');
+                {filteredPkgQuestions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-500">
+                      No questions in this package match the selected Bloom&apos;s Taxonomy level.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredPkgQuestions.map((q) => {
+                    const topicName = topics.find((t) => t.id === q.topicId)?.name ?? '';
+                    const cogObj = cognitiveLevels.find((c) => c.id === q.cognitiveLevelId);
+                    const cogMeta = getBloomsMeta(cogObj);
+                    const targetObj =
+                      q.targetCognitiveLevelId && q.targetCognitiveLevelId !== q.cognitiveLevelId
+                        ? cognitiveLevels.find((c) => c.id === q.targetCognitiveLevelId)
+                        : undefined;
+                    const difName = difficultyLevels.find((d) => d.id === q.difficultyLevelId)?.name ?? '';
+                    const isEditable =
+                      isDraftStage || (isReturnedStage && q.reviewStatus === 'Returned');
+                    const canCopy = q.stem.trim().length > 0;
+                    const isChecked = selectedDupSet.has(q.id);
 
-                  return (
-                    <tr
-                      key={q.id}
-                      className={`hover:bg-slate-50/80 ${q.reviewStatus === 'Returned' ? 'bg-rose-50/30' : ''}`}
-                    >
-                      <td className="py-3 px-4 font-mono tabular-nums font-semibold text-slate-700">
-                        Q{q.slotNumber}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-900">{topicName}</div>
-                        <div className="text-slate-500">{q.subtopicName || 'Aligned to TOS Matrix'}</div>
-                      </td>
-                      <td className="py-3 px-4 text-slate-700">
-                        {cogName} · {difName}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-800">{q.marks}</td>
-                      <td className="py-3 px-4">
-                        <StatusText status={q.authoringStatus} />
-                      </td>
-                      <td className="py-3 px-4">
-                        <StatusText status={q.reviewStatus} />
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => openSlotInWorkspace(q.id)}
-                          className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
-                            q.reviewStatus === 'Returned'
-                              ? 'bg-rose-600 text-white hover:bg-rose-700'
+                    return (
+                      <tr
+                        key={q.id}
+                        className={`hover:bg-slate-50/80 ${q.reviewStatus === 'Returned' ? 'bg-rose-50/30' : ''}`}
+                      >
+                        <td className="py-3 px-3">
+                          <input
+                            type="checkbox"
+                            disabled={!canCopy}
+                            checked={isChecked}
+                            onChange={() =>
+                              setSelectedDupIds((prev) =>
+                                prev.includes(q.id)
+                                  ? prev.filter((x) => x !== q.id)
+                                  : [...prev, q.id]
+                              )
+                            }
+                            title={
+                              canCopy
+                                ? 'Select question for bulk duplication'
+                                : 'Blank slot cannot be duplicated'
+                            }
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-30"
+                          />
+                        </td>
+                        <td className="py-3 px-4 font-mono tabular-nums font-semibold text-slate-700">
+                          Q{q.slotNumber}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-semibold text-slate-900">{topicName}</div>
+                          <div className="text-slate-500">{q.subtopicName || 'Aligned to TOS Matrix'}</div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-medium ${cogMeta.badgeClass}`}
+                            >
+                              <span className="font-mono font-bold">{cogMeta.code}</span>
+                              <span>{cogMeta.shortLabel}</span>
+                            </span>
+                            <span className="text-slate-500">· {difName}</span>
+                            {targetObj && (
+                              <span className="text-[11px] font-mono text-amber-700">
+                                (TOS: {getBloomsMeta(targetObj).code})
+                              </span>
+                            )}
+                          </div>
+                          {q.bloomTags && q.bloomTags.length > 0 && (
+                            <div className="text-[11px] font-mono text-slate-500">
+                              Verbs: {q.bloomTags.join(' · ')}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono tabular-nums text-slate-800">{q.marks}</td>
+                        <td className="py-3 px-4">
+                          <StatusText status={q.authoringStatus} />
+                        </td>
+                        <td className="py-3 px-4">
+                          <StatusText status={q.reviewStatus} />
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openSlotInWorkspace(q.id)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-lg ${
+                              q.reviewStatus === 'Returned'
+                                ? 'bg-rose-600 text-white hover:bg-rose-700'
+                                : isEditable
+                                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            {q.reviewStatus === 'Returned'
+                              ? 'Revise Returned'
                               : isEditable
-                              ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          }`}
-                        >
-                          {q.reviewStatus === 'Returned'
-                            ? 'Revise Returned'
-                            : isEditable
-                            ? 'Author / Edit'
-                            : 'View Read-Only'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                              ? 'Author / Edit'
+                              : 'View Read-Only'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         </>
+      )}
+
+      {bulkDupOpen && activePkg && (
+        <BulkDuplicateQuestionsModal
+          activePackageId={activePkg.id}
+          initialSelectedIds={selectedDupIds}
+          onClose={() => setBulkDupOpen(false)}
+          onDuplicated={(result) => {
+            setBulkDupOpen(false);
+            setSelectedDupIds([]);
+            setSelectedPackageId(result.targetPackageId);
+            if (result.createdIds[0]) {
+              setSelectedQuestionId(result.createdIds[0]);
+            }
+          }}
+        />
       )}
     </div>
   );
@@ -566,7 +760,10 @@ export const AuthoringWorkspaceView: React.FC = () => {
   const [sampleAnswer, setSampleAnswer] = useState('');
   const [rationale, setRationale] = useState('');
   const [diagramSvg, setDiagramSvg] = useState<string | undefined>(undefined);
+  const [cognitiveLevelId, setCognitiveLevelId] = useState('');
+  const [bloomTags, setBloomTags] = useState<string[]>([]);
   const [showFullPreview, setShowFullPreview] = useState(false);
+  const [bulkDupOpen, setBulkDupOpen] = useState(false);
 
   useEffect(() => {
     if (currentQuestion) {
@@ -576,6 +773,8 @@ export const AuthoringWorkspaceView: React.FC = () => {
       setSampleAnswer(currentQuestion.sampleAnswer || '');
       setRationale(currentQuestion.rationale);
       setDiagramSvg(currentQuestion.diagramSvg);
+      setCognitiveLevelId(currentQuestion.cognitiveLevelId);
+      setBloomTags(currentQuestion.bloomTags ?? []);
     }
   }, [currentQuestion?.id]);
 
@@ -609,6 +808,8 @@ export const AuthoringWorkspaceView: React.FC = () => {
       sampleAnswer,
       rationale,
       diagramSvg,
+      cognitiveLevelId: cognitiveLevelId || currentQuestion.cognitiveLevelId,
+      bloomTags,
     });
     if (showMessage) {
       notifyToast(`Saved Question ${currentQuestion.slotNumber} of ${pkgQuestions.length}`);
@@ -622,9 +823,14 @@ export const AuthoringWorkspaceView: React.FC = () => {
     }
   };
 
+  const activeCogId = cognitiveLevelId || currentQuestion.cognitiveLevelId;
   const topicName = topics.find((t) => t.id === currentQuestion.topicId)?.name;
   const loObj = learningOutcomes.find((l) => l.id === currentQuestion.learningOutcomeId);
-  const cogName = cognitiveLevels.find((c) => c.id === currentQuestion.cognitiveLevelId)?.name;
+  const cogObj = cognitiveLevels.find((c) => c.id === activeCogId);
+  const cogMeta = getBloomsMeta(cogObj);
+  const cogName = cogObj?.name;
+  const targetCogId = currentQuestion.targetCognitiveLevelId ?? currentQuestion.cognitiveLevelId;
+  const targetCogObj = cognitiveLevels.find((c) => c.id === targetCogId);
   const difName = difficultyLevels.find((d) => d.id === currentQuestion.difficultyLevelId)?.name;
   const qtObj = questionTypes.find((qt) => qt.id === currentQuestion.questionTypeId);
   const isShortAnswer = currentQuestion.questionTypeId === 'qt-short';
@@ -652,8 +858,17 @@ export const AuthoringWorkspaceView: React.FC = () => {
               <StatusText status={currentQuestion.reviewStatus} />
             )}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5 tabular-nums">
-            {topicName} · {loObj?.code} · {cogName} · {difName} · {qtObj?.name ?? 'MCQ'} · {currentQuestion.marks} Marks
+          <div className="text-xs text-slate-500 mt-0.5 tabular-nums flex flex-wrap items-center gap-2">
+            <span>
+              {topicName} · {loObj?.code} ·{' '}
+              <span className="font-mono font-semibold text-slate-700">{cogMeta.code}</span>{' '}
+              {cogName} · {difName} · {qtObj?.name ?? 'MCQ'} · {currentQuestion.marks} Marks
+            </span>
+            {bloomTags.length > 0 && (
+              <span className="font-mono text-[11px] text-blue-700">
+                [{bloomTags.join(' · ')}]
+              </span>
+            )}
           </div>
         </div>
 
@@ -674,6 +889,18 @@ export const AuthoringWorkspaceView: React.FC = () => {
               </option>
             ))}
           </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (canEditThisQuestion) persistCurrent(false);
+              setBulkDupOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg whitespace-nowrap shrink-0"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Bulk Duplicate</span>
+          </button>
 
           <button
             type="button"
@@ -754,6 +981,18 @@ export const AuthoringWorkspaceView: React.FC = () => {
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              if (canEditThisQuestion) persistCurrent(false);
+              setBulkDupOpen(true);
+            }}
+            className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs font-medium text-slate-700 whitespace-nowrap shrink-0"
+            title="Copy existing questions into new draft slots"
+          >
+            <Copy className="w-3 h-3" />
+            <span>+ Duplicate</span>
+          </button>
         </div>
       </div>
 
@@ -785,9 +1024,18 @@ export const AuthoringWorkspaceView: React.FC = () => {
       {/* Main Editor or Full Preview */}
       {showFullPreview ? (
         <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-5 max-w-4xl">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-            <div className="text-xs text-slate-500 tabular-nums">
-              Question {currentQuestion.slotNumber} · {topicName} · {cogName} · {difName} · {currentQuestion.marks} Marks
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+            <div className="text-xs text-slate-500 tabular-nums flex flex-wrap items-center gap-2">
+              <span>
+                Question {currentQuestion.slotNumber} · {topicName} ·{' '}
+                <span className="font-mono font-semibold text-slate-800">{cogMeta.code}</span> {cogName} ·{' '}
+                {difName} · {currentQuestion.marks} Marks
+              </span>
+              {bloomTags.length > 0 && (
+                <span className="font-mono text-[11px] text-blue-700">
+                  Tags: {bloomTags.join(' · ')}
+                </span>
+              )}
             </div>
             <StatusText status={currentQuestion.authoringStatus} />
           </div>
@@ -835,18 +1083,30 @@ export const AuthoringWorkspaceView: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-          {/* Left 2 Columns: Rich Editors */}
-          <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-6 space-y-6">
-            <RichMathEditor
-              label="Question Stem (Rich Text, LaTeX Math & Diagrams)"
-              value={stem}
-              onChange={setStem}
-              rows={4}
+          {/* Left 2 Columns: Bloom's Taxonomy Tagger & Rich Editors */}
+          <div className="xl:col-span-2 space-y-5">
+            <BloomsTaxonomyTagger
+              cognitiveLevels={cognitiveLevels}
+              selectedCognitiveLevelId={activeCogId}
+              targetCognitiveLevelId={targetCogId}
+              bloomTags={bloomTags}
+              stem={stem}
               disabled={!canEditThisQuestion}
-              allowDiagrams
-              diagramSvg={diagramSvg}
-              onDiagramChange={setDiagramSvg}
+              onChangeCognitiveLevel={setCognitiveLevelId}
+              onChangeBloomTags={setBloomTags}
             />
+
+            <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-6">
+              <RichMathEditor
+                label="Question Stem (Rich Text, LaTeX Math & Diagrams)"
+                value={stem}
+                onChange={setStem}
+                rows={4}
+                disabled={!canEditThisQuestion}
+                allowDiagrams
+                diagramSvg={diagramSvg}
+                onDiagramChange={setDiagramSvg}
+              />
 
             {isShortAnswer ? (
               <RichMathEditor
@@ -964,6 +1224,7 @@ export const AuthoringWorkspaceView: React.FC = () => {
                 )}
               </div>
             </div>
+            </div>
           </div>
 
           {/* Right Column: Requirement Context & Revision History */}
@@ -983,8 +1244,24 @@ export const AuthoringWorkspaceView: React.FC = () => {
                   {loObj?.statement}
                 </div>
                 <div className="flex justify-between gap-2">
-                  <dt className="text-slate-500">Cognitive Level</dt>
-                  <dd className="font-medium text-slate-800">{cogName}</dd>
+                  <dt className="text-slate-500">Bloom Classification</dt>
+                  <dd className="font-medium text-slate-900 text-right">
+                    <span className="font-mono font-semibold">{cogMeta.code}</span> · {cogName}
+                  </dd>
+                </div>
+                {targetCogObj && targetCogObj.id !== activeCogId && (
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-slate-500">Blueprint TOS Target</dt>
+                    <dd className="font-mono text-amber-700 text-right">
+                      {getBloomsMeta(targetCogObj).code} · {targetCogObj.name}
+                    </dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-2">
+                  <dt className="text-slate-500">Bloom Action Tags</dt>
+                  <dd className="font-mono text-slate-700 text-right">
+                    {bloomTags.length > 0 ? bloomTags.join(', ') : 'None tagged'}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-2">
                   <dt className="text-slate-500">Difficulty</dt>
@@ -1020,6 +1297,23 @@ export const AuthoringWorkspaceView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {bulkDupOpen && (
+        <BulkDuplicateQuestionsModal
+          activePackageId={activePkg.id}
+          initialSelectedIds={
+            currentQuestion.stem.trim().length > 0 ? [currentQuestion.id] : []
+          }
+          onClose={() => setBulkDupOpen(false)}
+          onDuplicated={(result) => {
+            setBulkDupOpen(false);
+            setSelectedPackageId(result.targetPackageId);
+            if (result.createdIds[0]) {
+              setSelectedQuestionId(result.createdIds[0]);
+            }
+          }}
+        />
       )}
     </div>
   );

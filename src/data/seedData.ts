@@ -11,12 +11,14 @@ import {
   QuestionItem,
   QuestionPackage,
   QuestionType,
+  QuestionVersionSnapshot,
   RoleDefinition,
   RolePermissionMatrix,
   Subject,
   SystemSettings,
   Topic,
 } from '../types/examnova';
+import { DEFAULT_BLOOM_VERBS_BY_ID } from '../utils/bloomsTaxonomy';
 
 export const ROLES: RoleDefinition[] = [
   {
@@ -319,6 +321,7 @@ export const INITIAL_COGNITIVE_LEVELS: CognitiveLevel[] = [
   { id: 'cog-app', name: 'Applying', code: 'C3', order: 3, description: 'Execute mathematical procedures and solve structured problems.' },
   { id: 'cog-ana', name: 'Analyzing', code: 'C4', order: 4, description: 'Deconstruct multi-step systems, compare relationships, and infer constraints.' },
   { id: 'cog-eva', name: 'Evaluating', code: 'C5', order: 5, description: 'Critique proofs, verify edge cases, and justify optimal solutions.' },
+  { id: 'cog-cre', name: 'Creating', code: 'C6', order: 6, description: 'Formulate original models, construct equations, and synthesize new derivations.' },
 ];
 
 export const INITIAL_DIFFICULTY_LEVELS: DifficultyLevel[] = [
@@ -627,6 +630,8 @@ function buildQuestionFromSpec(
     subtopicName: spec.subtopic,
     learningOutcomeId: spec.loId,
     cognitiveLevelId: spec.cogId,
+    targetCognitiveLevelId: spec.cogId,
+    bloomTags: isBlank ? [] : [...(DEFAULT_BLOOM_VERBS_BY_ID[spec.cogId] ?? ['Solve'])],
     difficultyLevelId: spec.difId,
     questionTypeId: 'qt-mcq',
     marks: 2,
@@ -884,6 +889,8 @@ const pkg4Questions: QuestionItem[] = PHYSICS_TEMPLATES.map((tpl, idx) => ({
   topicId: tpl.topicId,
   learningOutcomeId: tpl.loId,
   cognitiveLevelId: tpl.cogId,
+  targetCognitiveLevelId: tpl.cogId,
+  bloomTags: [...(DEFAULT_BLOOM_VERBS_BY_ID[tpl.cogId] ?? ['Solve'])],
   difficultyLevelId: tpl.difId,
   questionTypeId: 'qt-mcq',
   marks: 2,
@@ -915,6 +922,44 @@ const pkg4Questions: QuestionItem[] = PHYSICS_TEMPLATES.map((tpl, idx) => ({
   ],
 }));
 
+function makeSnapshot(
+  q: QuestionItem,
+  version: number,
+  timestamp: string,
+  actorName: string,
+  actorRole: string,
+  changeType: QuestionVersionSnapshot['changeType'],
+  changeSummary: string,
+  changedFields: string[]
+): QuestionVersionSnapshot {
+  return {
+    version,
+    timestamp,
+    actorName,
+    actorRole,
+    changeType,
+    changeSummary,
+    changedFields,
+    snapshot: {
+      stem: q.stem,
+      options: q.options.map((o) => ({ ...o })),
+      correctOptionId: q.correctOptionId,
+      sampleAnswer: q.sampleAnswer,
+      rationale: q.rationale,
+      diagramSvg: q.diagramSvg,
+      marks: q.marks,
+      topicId: q.topicId,
+      learningOutcomeId: q.learningOutcomeId,
+      cognitiveLevelId: q.cognitiveLevelId,
+      difficultyLevelId: q.difficultyLevelId,
+      questionTypeId: q.questionTypeId,
+      bloomTags: q.bloomTags ? [...q.bloomTags] : undefined,
+      reviewStatus: q.reviewStatus,
+      bankAvailability: q.bankAvailability,
+    },
+  };
+}
+
 // Approved Question Bank items: 24 Mathematics items (covering all 20 slots + 4 alternates) + 4 Physics items
 const bankMathQuestions: QuestionItem[] = Array.from({ length: 24 }, (_, i) => {
   const slot = (i % 20) + 1;
@@ -925,52 +970,105 @@ const bankMathQuestions: QuestionItem[] = Array.from({ length: 24 }, (_, i) => {
     reviewerComment: 'Accepted without modification.',
     approverComment: 'Approved for Question Bank release.',
   });
+  const v1Snap = makeSnapshot(
+    q,
+    1,
+    '2026-11-11 10:15',
+    'Prof. Helena Abebe',
+    'Question Approver',
+    'Initial Certification',
+    'Certified and released into Approved Question Bank.',
+    []
+  );
   if (i >= 20) {
     q.stem = `[Alternate Form] ${q.stem}`;
+    q.rationale = `${q.rationale} (Alternate equivalence form verified for parallel exam paper security.)`;
     q.version = 2;
+    q.updatedAt = '2026-11-13 15:20';
+    const v2Snap = makeSnapshot(
+      q,
+      2,
+      '2026-11-13 15:20',
+      'Dr. Selamawit Bekele',
+      'Subject Coordinator',
+      'Bank Amendment',
+      'Created alternate parallel form with expanded solution rationale for Form B assembly.',
+      ['Stem', 'Solution Rationale']
+    );
+    q.versionHistory = [v1Snap, v2Snap];
+    q.history = [
+      ...q.history,
+      {
+        id: `hist-${q.id}-v2`,
+        timestamp: '2026-11-13 15:20',
+        actorName: 'Dr. Selamawit Bekele',
+        actorRole: 'Subject Coordinator',
+        action: 'Auto-versioned Question Bank item to v2',
+        comment: 'Created alternate parallel form with expanded solution rationale.',
+      },
+    ];
+  } else {
+    q.versionHistory = [v1Snap];
   }
   return q;
 });
 
-const bankPhysQuestions: QuestionItem[] = PHYSICS_TEMPLATES.slice(0, 4).map((tpl, idx) => ({
-  id: `qb-phys-${idx + 1}`,
-  packageId: 'pkg-bank-phys',
-  slotNumber: idx + 1,
-  blueprintId: 'bp-phys-g12',
-  examTypeId: 'et-g12',
-  subjectId: 'subj-phys',
-  topicId: tpl.topicId,
-  learningOutcomeId: tpl.loId,
-  cognitiveLevelId: tpl.cogId,
-  difficultyLevelId: tpl.difId,
-  questionTypeId: 'qt-mcq',
-  marks: 2,
-  stem: tpl.stem,
-  options: [
-    { id: `qb-phys-${idx + 1}-a`, label: 'A', content: tpl.opts[0] },
-    { id: `qb-phys-${idx + 1}-b`, label: 'B', content: tpl.opts[1] },
-    { id: `qb-phys-${idx + 1}-c`, label: 'C', content: tpl.opts[2] },
-    { id: `qb-phys-${idx + 1}-d`, label: 'D', content: tpl.opts[3] },
-  ],
-  correctOptionId: `qb-phys-${idx + 1}-a`,
-  rationale: tpl.rationale,
-  authoringStatus: 'Ready',
-  reviewStatus: 'Approved',
-  authorId: 'usr-author-2',
-  version: 1,
-  inBank: true,
-  bankAvailability: 'Available',
-  updatedAt: '2026-10-30 14:00',
-  history: [
-    {
-      id: `h-qbp-${idx + 1}`,
-      timestamp: '2026-10-30 14:00',
-      actorName: 'Prof. Helena Abebe',
-      actorRole: 'Question Approver',
-      action: 'Approved into Question Bank',
-    },
-  ],
-}));
+const bankPhysQuestions: QuestionItem[] = PHYSICS_TEMPLATES.slice(0, 4).map((tpl, idx) => {
+  const q: QuestionItem = {
+    id: `qb-phys-${idx + 1}`,
+    packageId: 'pkg-bank-phys',
+    slotNumber: idx + 1,
+    blueprintId: 'bp-phys-g12',
+    examTypeId: 'et-g12',
+    subjectId: 'subj-phys',
+    topicId: tpl.topicId,
+    learningOutcomeId: tpl.loId,
+    cognitiveLevelId: tpl.cogId,
+    targetCognitiveLevelId: tpl.cogId,
+    bloomTags: [...(DEFAULT_BLOOM_VERBS_BY_ID[tpl.cogId] ?? ['Solve'])],
+    difficultyLevelId: tpl.difId,
+    questionTypeId: 'qt-mcq',
+    marks: 2,
+    stem: tpl.stem,
+    options: [
+      { id: `qb-phys-${idx + 1}-a`, label: 'A', content: tpl.opts[0] },
+      { id: `qb-phys-${idx + 1}-b`, label: 'B', content: tpl.opts[1] },
+      { id: `qb-phys-${idx + 1}-c`, label: 'C', content: tpl.opts[2] },
+      { id: `qb-phys-${idx + 1}-d`, label: 'D', content: tpl.opts[3] },
+    ],
+    correctOptionId: `qb-phys-${idx + 1}-a`,
+    rationale: tpl.rationale,
+    authoringStatus: 'Ready',
+    reviewStatus: 'Approved',
+    authorId: 'usr-author-2',
+    version: 1,
+    inBank: true,
+    bankAvailability: 'Available',
+    updatedAt: '2026-10-30 14:00',
+    history: [
+      {
+        id: `h-qbp-${idx + 1}`,
+        timestamp: '2026-10-30 14:00',
+        actorName: 'Prof. Helena Abebe',
+        actorRole: 'Question Approver',
+        action: 'Approved into Question Bank',
+      },
+    ],
+  };
+  q.versionHistory = [
+    makeSnapshot(
+      q,
+      1,
+      '2026-10-30 14:00',
+      'Prof. Helena Abebe',
+      'Question Approver',
+      'Initial Certification',
+      'Approved into Grade 12 Physics Question Bank.',
+      []
+    ),
+  ];
+  return q;
+});
 
 const pkg5RevisionQuestions: QuestionItem[] = [1, 2, 3, 4].map((slot) => {
   const isReturned = slot === 2 || slot === 4;

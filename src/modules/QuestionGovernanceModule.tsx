@@ -12,6 +12,7 @@ import {
 import { useExamNova } from '../context/ExamNovaContext';
 import { StatusText } from '../components/StatusText';
 import { MathRenderer } from '../components/MathRenderer';
+import { getBloomsMeta } from '../utils/bloomsTaxonomy';
 import {
   WorkflowTimeline,
   PACKAGE_WORKFLOW_STAGES,
@@ -294,12 +295,20 @@ export const QuestionReviewView: React.FC = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
               <div className="xl:col-span-2 bg-white border border-slate-200 rounded-xl p-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
-                  <div className="text-xs text-slate-600 tabular-nums">
+                  <div className="text-xs text-slate-600 tabular-nums flex flex-wrap items-center gap-1.5">
                     <strong className="text-slate-900 font-mono">Q{currentQ.slotNumber}</strong> ·{' '}
                     {questionTypes.find((qt) => qt.id === currentQ.questionTypeId)?.name ?? 'MCQ'} ·{' '}
                     {topics.find((t) => t.id === currentQ.topicId)?.name} ·{' '}
+                    <span className="font-mono font-semibold text-slate-800">
+                      {getBloomsMeta(cognitiveLevels.find((c) => c.id === currentQ.cognitiveLevelId)).code}
+                    </span>{' '}
                     {cognitiveLevels.find((c) => c.id === currentQ.cognitiveLevelId)?.name} ·{' '}
                     {difficultyLevels.find((d) => d.id === currentQ.difficultyLevelId)?.name} · {currentQ.marks} Marks
+                    {currentQ.bloomTags && currentQ.bloomTags.length > 0 && (
+                      <span className="font-mono text-[11px] text-blue-700">
+                        · [{currentQ.bloomTags.join(' · ')}]
+                      </span>
+                    )}
                   </div>
                   <StatusText status={currentQ.reviewStatus} />
                 </div>

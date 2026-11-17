@@ -197,6 +197,40 @@ export interface RevisionEntry {
   comment?: string;
 }
 
+export type QuestionVersionChangeType =
+  | 'Initial Certification'
+  | 'Revision Update'
+  | 'Bank Amendment'
+  | 'Availability Change'
+  | 'Rollback Restore';
+
+export interface QuestionVersionSnapshot {
+  version: number;
+  timestamp: string;
+  actorName: string;
+  actorRole: string;
+  changeType: QuestionVersionChangeType;
+  changeSummary: string;
+  changedFields: string[];
+  snapshot: {
+    stem: string;
+    options: AnswerOption[];
+    correctOptionId: string;
+    sampleAnswer?: string;
+    rationale: string;
+    diagramSvg?: string;
+    marks: number;
+    topicId: string;
+    learningOutcomeId: string;
+    cognitiveLevelId: string;
+    difficultyLevelId: string;
+    questionTypeId: string;
+    bloomTags?: string[];
+    reviewStatus: QuestionWorkflowStatus;
+    bankAvailability: 'Available' | 'Reserved' | 'Used in Active Exam' | 'Retired';
+  };
+}
+
 export interface QuestionItem {
   id: string;
   packageId: string;
@@ -208,6 +242,8 @@ export interface QuestionItem {
   subtopicName?: string;
   learningOutcomeId: string;
   cognitiveLevelId: string;
+  targetCognitiveLevelId?: string;
+  bloomTags?: string[];
   difficultyLevelId: string;
   questionTypeId: string;
   marks: number;
@@ -227,6 +263,7 @@ export interface QuestionItem {
   bankAvailability: 'Available' | 'Reserved' | 'Used in Active Exam' | 'Retired';
   updatedAt: string;
   history: RevisionEntry[];
+  versionHistory?: QuestionVersionSnapshot[];
 }
 
 export type PackageStatus =

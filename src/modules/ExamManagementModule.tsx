@@ -22,6 +22,8 @@ import { Blueprint, Examination } from '../types/examnova';
 import { StatusText } from '../components/StatusText';
 import { MathRenderer } from '../components/MathRenderer';
 import { ExportModal } from '../components/ExportModal';
+import { ExamAssemblyCharts } from '../components/ExamAssemblyCharts';
+import { getBloomsMeta } from '../utils/bloomsTaxonomy';
 import {
   SavedFilterBar,
   SavedFilterPreset,
@@ -328,6 +330,11 @@ export const ExamAssemblyView: React.FC = () => {
 
   const bp = blueprints.find((b) => b.id === currentExam?.blueprintId);
   const val = currentExam ? computeExamValidation(currentExam, bp, questions) : null;
+  const selectedQuestionItems = currentExam
+    ? currentExam.selectedQuestionIds
+        .map((id) => questions.find((q) => q.id === id))
+        .filter((q): q is NonNullable<typeof q> => Boolean(q))
+    : [];
 
   const eligibleBank = questions.filter(
     (q) =>
@@ -580,6 +587,14 @@ export const ExamAssemblyView: React.FC = () => {
             </div>
           </div>
 
+          <ExamAssemblyCharts
+            exam={currentExam}
+            blueprint={bp}
+            selectedQuestions={selectedQuestionItems}
+            cognitiveLevels={cognitiveLevels}
+            difficultyLevels={difficultyLevels}
+          />
+
           {/* 2-Column Visual Assembly Workspace */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
             {/* Left 5 Cols: Blueprint Requirement Slots + Selected Items */}
@@ -716,7 +731,8 @@ export const ExamAssemblyView: React.FC = () => {
                 {eligibleBank.map((q) => {
                   const selected = currentExam.selectedQuestionIds.includes(q.id);
                   const top = topics.find((t) => t.id === q.topicId)?.name;
-                  const cog = cognitiveLevels.find((c) => c.id === q.cognitiveLevelId)?.name;
+                  const cogObj = cognitiveLevels.find((c) => c.id === q.cognitiveLevelId);
+                  const cogMeta = getBloomsMeta(cogObj);
                   const dif = difficultyLevels.find((d) => d.id === q.difficultyLevelId)?.name;
 
                   return (
@@ -727,8 +743,15 @@ export const ExamAssemblyView: React.FC = () => {
                       }`}
                     >
                       <div className="space-y-1.5 min-w-0 flex-1">
-                        <div className="text-[11px] text-slate-500 font-medium tabular-nums">
-                          <span className="font-mono text-slate-700">{q.id}</span> · {top} · {cog} · {dif} · {q.marks} Marks
+                        <div className="text-[11px] text-slate-500 font-medium tabular-nums flex flex-wrap items-center gap-1.5">
+                          <span className="font-mono text-slate-700">{q.id}</span> · {top} ·{' '}
+                          <span className="font-mono font-semibold text-slate-800">{cogMeta.code}</span>{' '}
+                          {cogObj?.name} · {dif} · {q.marks} Marks
+                          {q.bloomTags && q.bloomTags.length > 0 && (
+                            <span className="font-mono text-blue-700">
+                              · [{q.bloomTags.join(' · ')}]
+                            </span>
+                          )}
                         </div>
                         <MathRenderer content={q.stem} className="text-xs text-slate-900" />
                       </div>
